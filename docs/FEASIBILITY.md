@@ -83,3 +83,15 @@ The source-level check makes the integration options more concrete:
 3. Compare actual reliability, dependency footprint, license obligations, and test results before selecting either integration for the application.
 
 The probes should be disposable experiments, not the final architecture. Keep Viloja's backend interface narrow and capability-driven so either implementation can be replaced if maintenance or licensing becomes a blocker.
+
+## Proof-of-concept execution plan
+
+A step-by-step test plan now lives in [`docs/POC_PLAN.md`](POC_PLAN.md). It covers the Valent session-D-Bus probe, a separate rquickshare Rust harness, pass/fail criteria, safety requirements for incoming files, licensing gates, and a result log template.
+
+### Additional API findings
+
+- rquickshare's transfer event model is explicitly bidirectional: `ChannelDirection::LibToFront` reports library events, while `FrontToLib` carries user actions. Inbound actions include accept, reject, and cancel; outbound transfers support cancellation. This is enough to sketch a UI adapter, but not proof that all state transitions and errors are handled robustly.
+- Outbound payloads currently expose file paths through `OutboundPayload::Files(Vec<String>)`. The harness must validate selected paths and avoid logging sensitive paths. The library's inbound handler supports explicit accept/reject and cancellation actions, so Viloja should never auto-accept incoming transfers.
+- Valent's device-manager source constructs per-device object paths below its object-manager base path and exports a D-Bus action group at each device path. The actual service name and root path should be discovered from the installed runtime rather than guessed from source or hard-coded before the probe.
+
+No proof-of-concept has been run against a live Android phone yet. These findings make the test harness design more concrete; they do not change the project status from planning/research to working implementation.
