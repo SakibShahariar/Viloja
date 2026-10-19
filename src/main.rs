@@ -1,6 +1,113 @@
 mod backend;
 
 use adw::prelude::*;
+use gio::prelude::*;
+use glib::variant::ToVariant;
+
+const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
+const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
+const VALENT_DEVICE_INTERFACE: &str = "ca.andyholmes.Valent.Device";
+const OBJECT_MANAGER_INTERFACE: &str = "org.freedesktop.DBus.ObjectManager";
+
+#[derive(Debug, Clone)]
+struct ValentDeviceInfo {
+    id: String,
+    name: String,
+    state: u32,
+}
+
+impl ValentDeviceInfo {
+    fn connection_label(&self) -> &'static str {
+        if self.state & 1 != 0 {
+            "Connected"
+        } else if self.state & 2 != 0 {
+            "Paired · offline"
+        } else if self.state & 4 != 0 {
+            "Incoming pairing request"
+        } else if self.state & 8 != 0 {
+            "Outgoing pairing request"
+        } else {
+            "Not connected"
+        }
+    }
+}
+
+fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
+    let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
+        .map_err(|error| format!("Could not connect to the session bus: {error}"))?;
+
+    let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
+        .expect("the ObjectManager reply signature is valid");
+    let reply = connection
+        .call_sync(
+            Some(VALENT_BUS_NAME),
+            VALENT_OBJECT_PATH,
+            OBJECT_MANAGER_INTERFACE,
+            "GetManagedObjects",
+            None,
+            Some(reply_type),
+            gio::DBusCallFlags::NONE,
+            3000,
+            gio::Cancellable::NONE,
+        )
+        .map_err(|error| {
+            format!(
+                "Valent is unavailable or does not expose its device manager: {error}"
+            )
+        })?;
+
+    let managed_objects = reply.child_value(0);
+    let mut devices = Vec::new();
+
+    for object_entry in managed_objects.iter() {
+        let object_path = object_entry
+            .child_value(0)
+            .get::<String>()
+            .unwrap_or_default();
+        let interfaces = object_entry.child_value(1);
+
+        for interface_entry in interfaces.iter() {
+            let interface_name = interface_entry
+                .child_value(0)
+                .get::<String>()
+                .unwrap_or_default();
+            if interface_name != VALENT_DEVICE_INTERFACE {
+                continue;
+            }
+
+            let properties = interface_entry.child_value(1);
+            let mut id = object_path.clone();
+            let mut name = String::from("Unnamed device");
+            let mut state = 0_u32;
+
+            for property_entry in properties.iter() {
+                let property_name = property_entry
+                    .child_value(0)
+                    .get::<String>()
+                    .unwrap_or_default();
+                let boxed_value = property_entry
+                    .child_value(1)
+                    .get::<glib::Variant>();
+
+                let Some(value) = boxed_value else {
+                    continue;
+                };
+
+                match property_name.as_str() {
+                    "Id" => id = value.get::<String>().unwrap_or(id),
+                    "Name" => name = value.get::<String>().unwrap_or(name),
+                    "State" => state = value.get::<u32>().unwrap_or(state),
+                    _ => {}
+                }
+            }
+
+            devices.push(ValentDeviceInfo { id, name, state });
+        }
+    }
+
+    devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(devices)
+}
 
 fn make_label(text: &str, css_class: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
@@ -43,6 +150,33 @@ fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
     scrolled
 }
 
+fn refresh_valent_devices(status: &gtk::Label, device_list: &gtk::Box) {
+    while let Some(child) = device_list.first_child() {
+        device_list.remove(&child);
+    }
+
+    match read_valent_devices() {
+        Ok(devices) if devices.is_empty() => {
+            status.set_text(
+                "Valent is available, but it has no known devices yet. Open Valent and make sure device discovery is enabled.",
+            );
+        }
+        Ok(devices) => {
+            status.set_text(&format!(
+                "Found {} device{} through Valent.",
+                devices.len(),
+                if devices.len() == 1 { "" } else { "s" }
+            ));
+            for device in devices {
+                let card = make_card(&device.name, device.connection_label());
+                card.set_tooltip_text(Some(&format!("Valent device ID: {}", device.id)));
+                device_list.append(&card);
+            }
+        }
+        Err(error) => status.set_text(&error),
+    }
+}
+
 fn build_ui(app: &adw::Application) {
     let window = adw::ApplicationWindow::builder()
         .application(app)
@@ -68,36 +202,48 @@ fn build_ui(app: &adw::Application) {
 
     let nearby = make_page(
         "Nearby",
-        "Find devices and share files over supported local connections.",
+        "Find devices known to Valent, the GNOME implementation of KDE Connect.",
     );
+    let discovery_status = make_label(
+        "Use Refresh to query Valent over the session D-Bus.",
+        "",
+    );
+    let refresh_button = gtk::Button::with_label("Refresh devices");
+    refresh_button.add_css_class("suggested-action");
+    refresh_button.set_halign(gtk::Align::Start);
+    let device_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    nearby.append(&refresh_button);
+    nearby.append(&discovery_status);
+    nearby.append(&device_list);
     nearby.append(&make_card(
-        "Device discovery is not connected yet",
-        "This first frontend build intentionally does not show fake nearby devices. Real discovery will appear here after a backend is integrated and tested.",
+        "File sharing",
+        "Device discovery is connected. Sending and receiving will be enabled after Viloja validates the exported device actions and transfer flow.",
     ));
-    nearby.append(&make_card(
-        "Backend status",
-        "No sharing backend is active. Quick Share and KDE Connect integration are still being evaluated.",
-    ));
+
+    let status_for_refresh = discovery_status.clone();
+    let list_for_refresh = device_list.clone();
+    refresh_button.connect_clicked(move |_| {
+        refresh_valent_devices(&status_for_refresh, &list_for_refresh);
+    });
     stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
 
     let send = make_page(
         "Send files",
-        "Choose files to prepare a transfer. Sending is not available until a real backend is connected.",
+        "Choose files to prepare a transfer. Sending is not available until the real transfer actions are integrated.",
     );
     let selection_status = make_label("No files selected.", "");
     let choose_button = gtk::Button::with_label("Choose files…");
     choose_button.add_css_class("suggested-action");
     send.append(&make_card(
         "Select files",
-        "You can select multiple files and review the selection here. Nothing is uploaded or sent by this prototype.",
+        "You can select multiple files and review the selection here. Nothing is sent by this prototype.",
     ));
     send.append(&choose_button);
     send.append(&selection_status);
-    let send_note = make_label(
-        "Transfer will remain disabled until a supported backend can discover a real device.",
+    send.append(&make_label(
+        "Transfer will remain disabled until a real device action is connected.",
         "dim-label",
-    );
-    send.append(&send_note);
+    ));
     stack.add_titled(&make_scrolled_page(&send), Some("send"), "Send files");
 
     let transfers = make_page(
@@ -106,7 +252,7 @@ fn build_ui(app: &adw::Application) {
     );
     transfers.append(&make_card(
         "No transfers yet",
-        "Transfer progress, cancellation, completion, and error states will be shown here once a backend is integrated.",
+        "Transfer progress, cancellation, completion, and error states will appear once transfer events are integrated.",
     ));
     stack.add_titled(&make_scrolled_page(&transfers), Some("transfers"), "Transfers");
 
@@ -116,7 +262,7 @@ fn build_ui(app: &adw::Application) {
     );
     history.append(&make_card(
         "History is empty",
-        "Viloja does not record transfer history in this prototype. A local history store will be added with the transfer model.",
+        "Viloja does not record transfer history in this prototype.",
     ));
     stack.add_titled(&make_scrolled_page(&history), Some("history"), "History");
 
@@ -126,7 +272,7 @@ fn build_ui(app: &adw::Application) {
     );
     settings.append(&make_card(
         "Receiving",
-        "Receiving preferences will be available when a backend exposes its supported options.",
+        "Receiving preferences will be available when the backend exposes its supported options.",
     ));
     settings.append(&make_card(
         "Downloads",
