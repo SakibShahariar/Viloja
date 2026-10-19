@@ -65,3 +65,21 @@ Before adopting code or a dependency:
 ## Evidence required before claiming support
 
 For every supported scenario, record the app/backend version, OS and Android versions, network setup, adapter/driver, exact test steps, outcome, and known limitations. Mark untested scenarios as **unknown**, not supported.
+
+
+## API-level follow-up (2026-10-19)
+
+The source-level check makes the integration options more concrete:
+
+- **rquickshare:** its `core_lib` is a real Rust library crate named `rqs_lib`, not only an executable. The public API includes an `RQS` runtime, device endpoint information, visibility controls, a discovery interface, and a channel for `SendInfo` requests. This is a plausible direct Rust-backend candidate. Before adoption, we still need to inspect the complete send/receive lifecycle, error propagation, cancellation, security-sensitive paths, dependency licenses, and whether the GPL-3.0 terms fit Viloja's intended distribution.
+- **GnomeQS:** its core is also a separate Rust crate, named `gnomeqs_core`, with discovery and transfer dependencies. This could be technically attractive for a GTK4/Rust app, but its README states AGPL-3.0 while the checked-in LICENSE starts with GPL-3.0 text. Treat licensing as unresolved until maintainers clarify it in writing or the repository is corrected. Its use of Rust edition 2024 and an experimental Bluetooth feature set also needs to be checked against Viloja's build environment.
+- **Valent:** source documentation confirms that device plugins expose named actions (for example, `share.uri`) through a `GActionGroup`, and Valent can export device objects and action groups on D-Bus. That gives Viloja a plausible process boundary: query device objects and invoke supported actions over the user's session bus instead of linking C libraries into Rust. The exact installed D-Bus names, object paths, action parameters, incoming-share signals, and Flatpak/system-package behavior must be verified with a working Valent installation.
+- **Packet:** remains a useful UI and behavior reference, but the currently documented D-Bus API should not be assumed to provide full send/receive control.
+
+### Proposed proof-of-concept order
+
+1. **KDE Connect/Valent D-Bus probe:** discover whether Valent is installed and running; enumerate device objects and action names; invoke a share action for a harmless test file; verify the incoming-transfer notification path.
+2. **Quick Share library probe:** build a tiny Rust CLI or test harness against one candidate library, list discovered endpoints, send a small file, receive a file, and demonstrate clean shutdown/cancellation.
+3. Compare actual reliability, dependency footprint, license obligations, and test results before selecting either integration for the application.
+
+The probes should be disposable experiments, not the final architecture. Keep Viloja's backend interface narrow and capability-driven so either implementation can be replaced if maintenance or licensing becomes a blocker.
