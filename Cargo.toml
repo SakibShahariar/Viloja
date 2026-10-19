@@ -1,0 +1,9 @@
+[package]
+name = "viloja"
+version = "0.1.0"
+edition = "2021"
+description = "A native GNOME app for nearby device discovery and wireless file sharing"
+
+[dependencies]
+adw = { package = "libadwaita", version = "0.7", features = ["v1_4"] }
+gtk = { package = "gtk4", version = "0.9" }
