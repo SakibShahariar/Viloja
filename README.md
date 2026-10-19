@@ -4,7 +4,14 @@
 
 Viloja aims to bring nearby-device file sharing and useful phone-to-desktop integration into one focused GNOME application. Its design goal is a polished GTK4/libadwaita experience with independent backends, so each supported sharing system can evolve without coupling the whole app to one protocol.
 
-> **Status: early planning.** Viloja is not yet a working file-transfer application. Protocol support, device discovery, transfer flows, and hardware-dependent connectivity options must be validated before implementation claims are made.
+> **Status: frontend prototype.** The first GTK4/libadwaita application shell is in progress. Device discovery, pairing, receiving, and actual file transfers are not implemented yet. The UI must not be mistaken for a working sharing application.
+
+## Current prototype
+
+- GNOME-native application window with Nearby, Send files, Transfers, History, and Settings pages.
+- Native multi-file chooser for preparing a selection.
+- Explicit empty states rather than fake discovered devices or simulated successful transfers.
+- Backend-specific capabilities and status are intended to be represented honestly in the UI.
 
 ## Goals
 
@@ -15,31 +22,38 @@ Viloja aims to bring nearby-device file sharing and useful phone-to-desktop inte
 - Prefer local-network transfers and investigate router-free options where the device and adapter support them.
 - Be transparent about backend capabilities and limitations instead of promising every connection method everywhere.
 
+## Run locally
+
+On Fedora, install the native development dependencies and Rust toolchain:
+
+```sh
+sudo dnf install gcc pkg-config gtk4-devel libadwaita-devel
+```
+
+Then, from the repository root:
+
+```sh
+cargo run
+```
+
+The first Cargo build will download Rust dependencies. The application currently only provides the UI shell and file-selection preview; it does not send or receive files.
+
 ## Planned experience
 
-- **Overview:** connection status, nearby devices, and recent transfers.
-- **Devices:** device details and available actions.
-- **Send:** choose files and a destination device.
-- **Incoming transfers:** review sender, file details, and accept or reject.
+- **Nearby:** discovered devices and connection status.
+- **Send files:** choose files and a destination device.
+- **Incoming transfers:** review sender and file details, then accept or reject.
 - **Transfers:** progress, cancellation, and clear error reporting.
 - **Settings:** backend availability, receiving preferences, and privacy controls.
 - **History:** a local record of completed and failed transfers, with controls to clear it.
 
-These are design goals, not implemented features.
+These remain design goals unless explicitly listed in the current prototype section.
 
 ## Architecture direction
 
 Viloja will use a shared GNOME interface with separate backend implementations. A backend should report its capabilities and own its protocol-specific discovery, pairing, authentication, and transfer operations. The UI must not assume every backend supports the same features.
 
-See [Architecture](docs/ARCHITECTURE.md) and [Feasibility notes](docs/FEASIBILITY.md).
-
-## Development status
-
-No functional implementation has been committed yet. The immediate work is to validate protocol and licensing options, define backend boundaries, and build a small proof of concept before committing to a full implementation.
-
-## Contributing
-
-Planning, research, documentation, and proof-of-concept contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+See [Architecture](docs/ARCHITECTURE.md), [Feasibility notes](docs/FEASIBILITY.md), and the [proof-of-concept plan](docs/POC_PLAN.md).
 
 ## License
 
