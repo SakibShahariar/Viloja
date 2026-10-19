@@ -1,7 +1,6 @@
 mod backend;
 
 use adw::prelude::*;
-use gio::prelude::*;
 use glib::variant::ToVariant;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -104,7 +103,7 @@ fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
 
             devices.push(ValentDeviceInfo {
                 id,
-                object_path,
+                object_path: object_path.clone(),
                 name,
                 state,
             });
