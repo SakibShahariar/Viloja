@@ -432,13 +432,14 @@ fn build_ui(app: &adw::Application) {
 
                 let count = uris.len();
                 *selected_files.borrow_mut() = uris;
-                status.set_text(match count {
+                let message = match count {
                     0 => "No usable files selected.".to_string(),
                     1 => "1 file selected. Choose a connected device on Nearby to send.".to_string(),
                     _ => format!(
                         "{count} files selected. Choose a connected device on Nearby to send."
                     ),
-                });
+                };
+                status.set_text(&message);
             }
             dialog.destroy();
         });
