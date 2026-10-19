@@ -43,4 +43,4 @@ Planning, research, documentation, and proof-of-concept contributions are welcom
 
 ## License
 
-Viloja is intended to be distributed under **GNU General Public License v3.0 or later**. See [LICENSE](LICENSE).
+The project license has **not been finalized yet**. See [LICENSE](LICENSE) for the current status. Do not assume the repository grants reuse or redistribution permissions until a license is selected and its full text is added.
