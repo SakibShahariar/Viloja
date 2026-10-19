@@ -1,3 +1,5 @@
+mod backend;
+
 use adw::prelude::*;
 
 fn make_label(text: &str, css_class: &str) -> gtk::Label {
