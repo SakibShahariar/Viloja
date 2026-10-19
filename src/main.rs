@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 
 fn make_label(text: &str, css_class: &str) -> gtk::Label {
     let label = gtk::Label::new(Some(text));
@@ -25,16 +24,11 @@ fn make_page(title: &str, description: &str) -> gtk::Box {
 fn make_card(title: &str, body: &str) -> gtk::Box {
     let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
     card.add_css_class("card");
-    card.set_margin_top(4);
-    card.set_margin_bottom(4);
-    card.set_margin_start(2);
-    card.set_margin_end(2);
-    card.set_hexpand(true);
     card.set_margin_top(6);
     card.set_margin_bottom(6);
-    card.set_spacing(8);
     card.set_margin_start(12);
     card.set_margin_end(12);
+    card.set_hexpand(true);
     card.append(&make_label(title, "heading"));
     card.append(&make_label(body, ""));
     card
@@ -67,7 +61,7 @@ fn build_ui(app: &adw::Application) {
     stack.set_hexpand(true);
 
     let sidebar = gtk::StackSidebar::new();
-    sidebar.set_stack(Some(&stack));
+    sidebar.set_stack(&stack);
     sidebar.set_width_request(190);
 
     let nearby = make_page(
@@ -154,6 +148,7 @@ fn build_ui(app: &adw::Application) {
     window.set_content(Some(&layout));
 
     let chooser_window = window.clone();
+    let status_label = selection_status.clone();
     choose_button.connect_clicked(move |_| {
         let chooser = gtk::FileChooserNative::new(
             Some("Choose files to prepare"),
@@ -164,7 +159,7 @@ fn build_ui(app: &adw::Application) {
         );
         chooser.set_select_multiple(true);
 
-        let status = selection_status.clone();
+        let status = status_label.clone();
         chooser.connect_response(move |dialog, response| {
             if response == gtk::ResponseType::Accept {
                 let count = dialog.files().n_items();
