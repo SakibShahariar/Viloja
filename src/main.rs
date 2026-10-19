@@ -1,17 +1,21 @@
 mod backend;
 
 use adw::prelude::*;
-use gio::prelude::*;
 use glib::variant::ToVariant;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
 const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
 const VALENT_DEVICE_INTERFACE: &str = "ca.andyholmes.Valent.Device";
 const OBJECT_MANAGER_INTERFACE: &str = "org.freedesktop.DBus.ObjectManager";
+const ACTION_GROUP_INTERFACE: &str = "org.gtk.Actions";
 
 #[derive(Debug, Clone)]
 struct ValentDeviceInfo {
     id: String,
+    object_path: String,
     name: String,
     state: u32,
 }
@@ -51,9 +55,7 @@ fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
             gio::Cancellable::NONE,
         )
         .map_err(|error| {
-            format!(
-                "Valent is unavailable or does not expose its device manager: {error}"
-            )
+            format!("Valent is unavailable or does not expose its device manager: {error}")
         })?;
 
     let managed_objects = reply.child_value(0);
@@ -85,9 +87,7 @@ fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
                     .child_value(0)
                     .get::<String>()
                     .unwrap_or_default();
-                let boxed_value = property_entry
-                    .child_value(1)
-                    .get::<glib::Variant>();
+                let boxed_value = property_entry.child_value(1).get::<glib::Variant>();
 
                 let Some(value) = boxed_value else {
                     continue;
@@ -101,12 +101,88 @@ fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
                 }
             }
 
-            devices.push(ValentDeviceInfo { id, name, state });
+            devices.push(ValentDeviceInfo {
+                id,
+                object_path: object_path.clone(),
+                name,
+                state,
+            });
         }
     }
 
     devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     Ok(devices)
+}
+
+fn send_files_via_valent(
+    device: &ValentDeviceInfo,
+    selected_files: &[String],
+) -> Result<(), String> {
+    if selected_files.is_empty() {
+        return Err("Choose one or more files on the Send files page first.".into());
+    }
+
+    if device.state & 1 == 0 {
+        return Err(format!("{} is not connected right now.", device.name));
+    }
+
+    let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
+        .map_err(|error| format!("Could not connect to the session bus: {error}"))?;
+
+    // Inspect the exported action group instead of assuming the sharing plugin
+    // is enabled on the target device.
+    let list_reply_type =
+        glib::VariantTy::new("(as)").expect("the action-list reply signature is valid");
+    let action_reply = connection
+        .call_sync(
+            Some(VALENT_BUS_NAME),
+            &device.object_path,
+            ACTION_GROUP_INTERFACE,
+            "List",
+            None,
+            Some(list_reply_type),
+            gio::DBusCallFlags::NONE,
+            3000,
+            gio::Cancellable::NONE,
+        )
+        .map_err(|error| format!("Could not inspect actions for {}: {error}", device.name))?;
+
+    let actions = action_reply.child_value(0);
+    let can_share_uris = actions.iter().any(|action| {
+        action.get::<String>().as_deref() == Some("share.uris")
+    });
+    if !can_share_uris {
+        return Err(format!(
+            "{} does not currently expose Valent's multi-file sharing action. Check that the Share plugin is enabled.",
+            device.name
+        ));
+    }
+
+    // GAction's D-Bus Activate signature is (s, av, a{sv}). The first
+    // parameter is the action name; the target string-array is wrapped as a
+    // Variant inside the parameter array.
+    let parameters = (
+        "share.uris",
+        vec![selected_files.to_vec().to_variant()],
+        HashMap::<String, glib::Variant>::new(),
+    )
+        .to_variant();
+
+    connection
+        .call_sync(
+            Some(VALENT_BUS_NAME),
+            &device.object_path,
+            ACTION_GROUP_INTERFACE,
+            "Activate",
+            Some(&parameters),
+            None,
+            gio::DBusCallFlags::NONE,
+            5000,
+            gio::Cancellable::NONE,
+        )
+        .map_err(|error| format!("Valent could not start the send request: {error}"))?;
+
+    Ok(())
 }
 
 fn make_label(text: &str, css_class: &str) -> gtk::Label {
@@ -150,7 +226,12 @@ fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
     scrolled
 }
 
-fn refresh_valent_devices(status: &gtk::Label, device_list: &gtk::Box) {
+fn refresh_valent_devices(
+    status: &gtk::Label,
+    device_list: &gtk::Box,
+    selected_files: &Rc<RefCell<Vec<String>>>,
+    send_status: &gtk::Label,
+) {
     while let Some(child) = device_list.first_child() {
         device_list.remove(&child);
     }
@@ -167,9 +248,29 @@ fn refresh_valent_devices(status: &gtk::Label, device_list: &gtk::Box) {
                 devices.len(),
                 if devices.len() == 1 { "" } else { "s" }
             ));
+
             for device in devices {
                 let card = make_card(&device.name, device.connection_label());
                 card.set_tooltip_text(Some(&format!("Valent device ID: {}", device.id)));
+
+                let send_button = gtk::Button::with_label("Send selected files");
+                send_button.set_halign(gtk::Align::Start);
+                send_button.set_sensitive(device.state & 1 != 0);
+
+                let selected_files = Rc::clone(selected_files);
+                let status_for_send = send_status.clone();
+                let device_for_send = device.clone();
+                send_button.connect_clicked(move |_| {
+                    let files = selected_files.borrow().clone();
+                    match send_files_via_valent(&device_for_send, &files) {
+                        Ok(()) => status_for_send.set_text(
+                            "Send request handed to Valent. Transfer progress and completion are not tracked in Viloja yet.",
+                        ),
+                        Err(error) => status_for_send.set_text(&error),
+                    }
+                });
+
+                card.append(&send_button);
                 device_list.append(&card);
             }
         }
@@ -200,6 +301,8 @@ fn build_ui(app: &adw::Application) {
     sidebar.set_stack(&stack);
     sidebar.set_width_request(190);
 
+    let selected_files: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+
     let nearby = make_page(
         "Nearby",
         "Find devices known to Valent, the GNOME implementation of KDE Connect.",
@@ -215,35 +318,38 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&refresh_button);
     nearby.append(&discovery_status);
     nearby.append(&device_list);
-    nearby.append(&make_card(
-        "File sharing",
-        "Device discovery is connected. Sending and receiving will be enabled after Viloja validates the exported device actions and transfer flow.",
-    ));
 
     let status_for_refresh = discovery_status.clone();
     let list_for_refresh = device_list.clone();
-    refresh_button.connect_clicked(move |_| {
-        refresh_valent_devices(&status_for_refresh, &list_for_refresh);
-    });
-    stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
+    let files_for_refresh = Rc::clone(&selected_files);
 
     let send = make_page(
         "Send files",
-        "Choose files to prepare a transfer. Sending is not available until the real transfer actions are integrated.",
+        "Choose files, then return to Nearby and select a connected device. Viloja hands the request to Valent; transfer progress is not integrated yet.",
     );
     let selection_status = make_label("No files selected.", "");
     let choose_button = gtk::Button::with_label("Choose files…");
     choose_button.add_css_class("suggested-action");
     send.append(&make_card(
         "Select files",
-        "You can select multiple files and review the selection here. Nothing is sent by this prototype.",
+        "Multiple files are supported through Valent's share.uris action.",
     ));
     send.append(&choose_button);
     send.append(&selection_status);
-    send.append(&make_label(
-        "Transfer will remain disabled until a real device action is connected.",
-        "dim-label",
-    ));
+    let send_status = make_label("No send request made.", "");
+    send_status.add_css_class("dim-label");
+    send.append(&send_status);
+
+    let status_for_refresh_send = send_status.clone();
+    refresh_button.connect_clicked(move |_| {
+        refresh_valent_devices(
+            &status_for_refresh,
+            &list_for_refresh,
+            &files_for_refresh,
+            &status_for_refresh_send,
+        );
+    });
+    stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
     stack.add_titled(&make_scrolled_page(&send), Some("send"), "Send files");
 
     let transfers = make_page(
@@ -251,8 +357,8 @@ fn build_ui(app: &adw::Application) {
         "Incoming and outgoing transfers will be listed here.",
     );
     transfers.append(&make_card(
-        "No transfers yet",
-        "Transfer progress, cancellation, completion, and error states will appear once transfer events are integrated.",
+        "Transfer tracking not integrated",
+        "Valent currently receives the send request. Viloja will show progress, cancellation, and completion after its transfer-event integration is implemented.",
     ));
     stack.add_titled(&make_scrolled_page(&transfers), Some("transfers"), "Transfers");
 
@@ -272,15 +378,15 @@ fn build_ui(app: &adw::Application) {
     );
     settings.append(&make_card(
         "Receiving",
-        "Receiving preferences will be available when the backend exposes its supported options.",
+        "Incoming transfer approval will be available when the backend exposes its supported options.",
     ));
     settings.append(&make_card(
         "Downloads",
-        "The download destination has not been configured yet.",
+        "The download destination is currently managed by Valent.",
     ));
     settings.append(&make_card(
         "Privacy",
-        "Device visibility and trust controls will be based on the active backend's real capabilities.",
+        "Device visibility and trust controls are based on Valent's current settings.",
     ));
     stack.add_titled(&make_scrolled_page(&settings), Some("settings"), "Settings");
 
@@ -297,9 +403,10 @@ fn build_ui(app: &adw::Application) {
 
     let chooser_window = window.clone();
     let status_label = selection_status.clone();
+    let selected_files_for_chooser = Rc::clone(&selected_files);
     choose_button.connect_clicked(move |_| {
         let chooser = gtk::FileChooserNative::new(
-            Some("Choose files to prepare"),
+            Some("Choose files to send"),
             Some(&chooser_window),
             gtk::FileChooserAction::Open,
             Some("Select"),
@@ -308,16 +415,31 @@ fn build_ui(app: &adw::Application) {
         chooser.set_select_multiple(true);
 
         let status = status_label.clone();
+        let selected_files = Rc::clone(&selected_files_for_chooser);
         chooser.connect_response(move |dialog, response| {
             if response == gtk::ResponseType::Accept {
-                let count = dialog.files().n_items();
-                if count == 1 {
-                    status.set_text("1 file selected. Ready for a backend integration.");
-                } else {
-                    status.set_text(&format!(
-                        "{count} files selected. Ready for a backend integration."
-                    ));
+                let files = dialog.files();
+                let mut uris = Vec::new();
+
+                for index in 0..files.n_items() {
+                    if let Some(file) = files
+                        .item(index)
+                        .and_then(|item| item.downcast::<gio::File>().ok())
+                    {
+                        uris.push(file.uri().to_string());
+                    }
                 }
+
+                let count = uris.len();
+                *selected_files.borrow_mut() = uris;
+                let message = match count {
+                    0 => "No usable files selected.".to_string(),
+                    1 => "1 file selected. Choose a connected device on Nearby to send.".to_string(),
+                    _ => format!(
+                        "{count} files selected. Choose a connected device on Nearby to send."
+                    ),
+                };
+                status.set_text(&message);
             }
             dialog.destroy();
         });
