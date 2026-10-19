@@ -1,7 +1,7 @@
-Viloja is intended to be distributed under the GNU General Public License
-version 3 or (at your option) any later version.
+Viloja's license has not been finalized yet.
 
-This project does not yet include a complete copy of the license text. Before
-publishing or distributing code, add the full official GPL-3.0-or-later text
-from https://www.gnu.org/licenses/gpl-3.0.txt and confirm that this licensing
-choice is appropriate for the project and all included material.
+Until a license is selected and its full text is added here, do not assume that
+the repository grants permission to reuse, modify, or redistribute its contents.
+
+A permissive license such as MIT or a copyleft license such as GPL-3.0-or-later
+can be considered before the first implementation is published.
