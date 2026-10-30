@@ -1,8 +1,10 @@
 mod backend;
+mod diagnostics;
 
 use adw::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
+use diagnostics::{DiagnosticLevel, DiagnosticEvent};
 
 const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
 const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
@@ -168,6 +170,7 @@ fn refresh_valent_devices(
     state: &Rc<RefCell<RefreshState>>,
 ) {
     let (request_id, cancellable) = begin_refresh(state);
+    diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
     status.set_text("Refreshing devices…");
     refresh_button.set_sensitive(false);
     clear_device_list(device_list);
@@ -236,6 +239,11 @@ fn refresh_valent_devices(
                             )
                         });
                     status_for_call.set_text(&device_result_status(&result));
+
+                    match &result {
+                        Ok(devices) => diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::DiscoveryCompleted { device_count: devices.len() }),
+                        Err(_) => diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendDiscoveryFailed),
+                    }
 
                     if let Ok(devices) = result {
                         for device in devices {
@@ -402,6 +410,7 @@ fn build_ui(app: &adw::Application) {
                 return;
             }
             invalidate_refresh(&state_for_disappearance);
+            diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
             clear_device_list(&list_for_disappearance);
             status_for_disappearance.set_text(
                 "Valent is not running. Start Valent to restore device discovery; Viloja will retry automatically when it appears.",
@@ -473,6 +482,46 @@ fn build_ui(app: &adw::Application) {
         "Privacy",
         "Device visibility and trust controls will be based on the active backend's real capabilities.",
     ));
+
+    settings.append(&make_label("Diagnostics", "title-2"));
+    settings.append(&make_label(
+        "Diagnostic entries use fixed event names and numeric counts only. Device names, addresses, tokens, paths, and raw backend error strings are never added to this log.",
+        "dim-label",
+    ));
+    let verbosity = gtk::DropDown::from_strings(&[
+        "Errors only",
+        "Normal",
+        "Verbose",
+        "Off",
+    ]);
+    verbosity.set_selected(diagnostics::verbosity_index());
+    verbosity.connect_selected_notify(|dropdown| {
+        diagnostics::set_verbosity(dropdown.selected());
+    });
+    settings.append(&make_label("Log verbosity", "heading"));
+    settings.append(&verbosity);
+
+    let diagnostic_view = gtk::TextView::new();
+    diagnostic_view.set_editable(false);
+    diagnostic_view.set_cursor_visible(false);
+    diagnostic_view.set_monospace(true);
+    diagnostic_view.set_wrap_mode(gtk::WrapMode::WordChar);
+    diagnostic_view.buffer().set_text(&diagnostics::export());
+    let diagnostic_scroll = gtk::ScrolledWindow::new();
+    diagnostic_scroll.set_min_content_height(180);
+    diagnostic_scroll.set_child(Some(&diagnostic_view));
+    settings.append(&diagnostic_scroll);
+
+    let copy_diagnostics = gtk::Button::with_label("Copy diagnostics");
+    copy_diagnostics.set_halign(gtk::Align::Start);
+    let diagnostic_buffer = diagnostic_view.buffer();
+    let diagnostic_display = window.display();
+    copy_diagnostics.connect_clicked(move |_| {
+        let exported = diagnostics::export();
+        diagnostic_buffer.set_text(&exported);
+        diagnostic_display.clipboard().set_text(&exported);
+    });
+    settings.append(&copy_diagnostics);
     stack.add_titled(&make_scrolled_page(&settings), Some("settings"), "Settings");
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
