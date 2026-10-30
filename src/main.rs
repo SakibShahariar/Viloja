@@ -741,6 +741,22 @@ mod tests {
     }
 
     #[test]
+    fn backend_disappearance_invalidates_refresh_and_allows_recovery() {
+        let state = Rc::new(RefCell::new(RefreshState::default()));
+        let (stale_id, stale_cancellable) = begin_refresh(&state);
+
+        invalidate_refresh(&state);
+
+        assert!(stale_cancellable.is_cancelled());
+        assert!(!is_current_refresh(&state, stale_id));
+        assert!(!finish_refresh(&state, stale_id));
+
+        let (recovered_id, _) = begin_refresh(&state);
+        assert!(is_current_refresh(&state, recovered_id));
+        assert!(finish_refresh(&state, recovered_id));
+    }
+
+    #[test]
     fn closing_the_window_cancels_and_invalidates_an_in_flight_refresh() {
         let state = Rc::new(RefCell::new(RefreshState::default()));
         let (request_id, cancellable) = begin_refresh(&state);
