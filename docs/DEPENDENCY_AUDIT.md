@@ -6,7 +6,7 @@ This document records the current dependency policy and known adoption gates. It
 
 ## Viloja's own license
 
-The root \`LICENSE\` file explicitly says that Viloja's license has not been finalized. Do not assume that the repository grants permission to reuse, modify, or redistribute its code. Do not package or distribute Viloja until its owner selects a license and replaces the placeholder with the complete license text.
+The root \`LICENSE\` file explicitly says that Viloja's license has not been finalized. Do not assume that the repository grants permission to reuse, modify, or redistribute its code. Do not package or distribute Viloja until its owner selects a license and replaces the placeholder with the complete license text. The Cargo package is marked \`publish = false\` because this is a desktop application rather than a crates.io library; this does not grant a license or authorize binary distribution.
 
 ## Direct Rust dependencies
 
@@ -29,7 +29,7 @@ Package metadata and license references:
 
 ## Automated policy
 
-The root \`deny.toml\` is the machine-enforced dependency policy. GitHub Actions runs \`cargo-deny\` after Cargo has resolved the graph.
+The root \`deny.toml\` is the machine-enforced dependency policy. GitHub Actions runs \`cargo-deny\` after Cargo has resolved the graph. The unpublished Viloja workspace package is excluded from third-party dependency license evaluation via \`[licenses.private] ignore = true\`; its own license remains unresolved and distribution remains blocked as described above.
 
 - **Licenses:** only the SPDX identifiers explicitly listed in \`deny.toml\` are accepted. Unknown, unrecognized, GPL, AGPL, LGPL, or other unapproved license expressions fail the check until reviewed and deliberately added.
 - **Advisories:** the RustSec advisory database is checked. Vulnerable, yanked, or unmaintained dependencies are not silently ignored.
