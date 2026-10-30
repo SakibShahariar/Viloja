@@ -67,6 +67,14 @@ fn finish_refresh(state: &Rc<RefCell<RefreshState>>, request_id: u64) -> bool {
     true
 }
 
+fn invalidate_refresh(state: &Rc<RefCell<RefreshState>>) {
+    let mut state = state.borrow_mut();
+    state.request_id = state.request_id.wrapping_add(1);
+    if let Some(cancellable) = state.cancellable.take() {
+        cancellable.cancel();
+    }
+}
+
 fn close_refresh(state: &Rc<RefCell<RefreshState>>) {
     let mut state = state.borrow_mut();
     state.closed = true;
@@ -356,10 +364,53 @@ fn build_ui(app: &adw::Application) {
     });
 
     let state_for_close = refresh_state.clone();
+    let watcher_for_close = Rc::new(RefCell::new(None));
+    let watcher_for_close_request = watcher_for_close.clone();
     window.connect_close_request(move |_| {
         close_refresh(&state_for_close);
+        if let Some(watcher_id) = watcher_for_close_request.borrow_mut().take() {
+            gio::bus_unwatch_name(watcher_id);
+        }
         glib::Propagation::Proceed
     });
+
+    let window_for_watcher = window.downgrade();
+    let window_for_appearance = window.clone();
+    let status_for_appearance = discovery_status.clone();
+    let list_for_appearance = device_list.clone();
+    let button_for_appearance = refresh_button.clone();
+    let state_for_appearance = refresh_state.clone();
+    let status_for_disappearance = discovery_status.clone();
+    let list_for_disappearance = device_list.clone();
+    let button_for_disappearance = refresh_button.clone();
+    let state_for_disappearance = refresh_state.clone();
+    let watcher_id = gio::bus_watch_name(
+        gio::BusType::Session,
+        VALENT_BUS_NAME,
+        gio::BusNameWatcherFlags::NONE,
+        move |_, _, _| {
+            refresh_valent_devices(
+                &window_for_appearance,
+                &status_for_appearance,
+                &list_for_appearance,
+                &button_for_appearance,
+                &state_for_appearance,
+            );
+        },
+        move |_, _| {
+            if window_for_watcher.upgrade().is_none() {
+                return;
+            }
+            invalidate_refresh(&state_for_disappearance);
+            clear_device_list(&list_for_disappearance);
+            status_for_disappearance.set_text(
+                "Valent is not running. Start Valent to restore device discovery; Viloja will retry automatically when it appears.",
+            );
+            button_for_disappearance.set_sensitive(true);
+        },
+    );
+    *watcher_for_close.borrow_mut() = Some(watcher_id);
+
     stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
 
     let send = make_page(
