@@ -285,12 +285,6 @@ fn backend_limitations_card() -> gtk::Box {
     make_card("Current backend: Valent (experimental)", VALENT_LIMITATIONS)
 }
 
-const VALENT_CAPABILITIES: &str = "Discovery: experimental session-D-Bus query (availability is shown on Nearby after refresh). Pairing: delegated to Valent; Viloja does not start or manage pairing. Send files: unavailable in Viloja. Receive files: unavailable in Viloja. Transfer cancellation: unavailable. Router-free transfer: unknown and not supported as a Viloja feature.";
-
-fn backend_capabilities_card() -> gtk::Box {
-    make_card("Valent backend capabilities", VALENT_CAPABILITIES)
-}
-
 fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
     let scrolled = gtk::ScrolledWindow::new();
     scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
@@ -337,7 +331,6 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&discovery_status);
     nearby.append(&device_list);
     nearby.append(&backend_limitations_card());
-    nearby.append(&backend_capabilities_card());
 
     let refresh_state = Rc::new(RefCell::new(RefreshState::default()));
     let window_for_refresh = window.clone();
@@ -409,7 +402,6 @@ fn build_ui(app: &adw::Application) {
         "Backend availability and transfer preferences will be configurable when those integrations exist.",
     );
     settings.append(&backend_limitations_card());
-    settings.append(&backend_capabilities_card());
     settings.append(&make_card(
         "Receiving",
         "Receiving preferences will be available when the backend exposes its supported options.",
@@ -494,16 +486,6 @@ mod tests {
         assert!(VALENT_LIMITATIONS.contains("not verified"));
         assert!(VALENT_LIMITATIONS.contains("not implemented"));
         assert!(VALENT_LIMITATIONS.contains("no support is claimed"));
-    }
-
-    #[test]
-    fn valent_capability_report_marks_unimplemented_actions_unavailable() {
-        assert!(VALENT_CAPABILITIES.contains("Discovery: experimental"));
-        assert!(VALENT_CAPABILITIES.contains("Pairing: delegated to Valent"));
-        assert!(VALENT_CAPABILITIES.contains("Send files: unavailable"));
-        assert!(VALENT_CAPABILITIES.contains("Receive files: unavailable"));
-        assert!(VALENT_CAPABILITIES.contains("Transfer cancellation: unavailable"));
-        assert!(VALENT_CAPABILITIES.contains("Router-free transfer: unknown"));
     }
 
     #[test]
