@@ -17,3 +17,5 @@ jobs:
           sudo apt-get install --yes build-essential pkg-config libgtk-4-dev libadwaita-1-dev
       - name: Check Rust project
         run: cargo check
+      - name: Run Rust tests
+        run: cargo test --all-targets
