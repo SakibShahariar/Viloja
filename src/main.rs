@@ -140,7 +140,9 @@ fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> Strin
             devices.len(),
             if devices.len() == 1 { "" } else { "s" }
         ),
-        Err(error) => error.clone(),
+        Err(error) => format!(
+            "Valent is unavailable or its device manager cannot be reached. Install Valent if needed, start it, enable device discovery, then refresh. Details: {error}"
+        ),
     }
 }
 
@@ -501,14 +503,15 @@ mod tests {
 
     #[test]
     fn refresh_status_preserves_unavailable_and_timeout_errors() {
-        assert_eq!(
-            device_result_status(&Err("Valent is unavailable".into())),
-            "Valent is unavailable"
-        );
-        assert_eq!(
-            device_result_status(&Err("D-Bus call timed out".into())),
-            "D-Bus call timed out"
-        );
+        let unavailable = device_result_status(&Err("service has no owner".into()));
+        assert!(unavailable.contains("Valent is unavailable"));
+        assert!(unavailable.contains("Install Valent"));
+        assert!(unavailable.contains("enable device discovery"));
+        assert!(unavailable.contains("service has no owner"));
+
+        let timeout = device_result_status(&Err("D-Bus call timed out".into()));
+        assert!(timeout.contains("Valent is unavailable"));
+        assert!(timeout.contains("D-Bus call timed out"));
     }
 
     #[test]
