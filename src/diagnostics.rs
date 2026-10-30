@@ -72,7 +72,7 @@ fn format_entry(timestamp: u64, level: DiagnosticLevel, event: DiagnosticEvent) 
 }
 
 fn append_entry(entries: &mut VecDeque<String>, line: String) {
-    if entries.len() == MAX_ENTRIES {
+    while entries.len() >= MAX_ENTRIES {
         entries.pop_front();
     }
     entries.push_back(line);
@@ -171,6 +171,17 @@ mod tests {
         append_entry(&mut log, "newest".into());
         assert_eq!(log.len(), MAX_ENTRIES);
         assert_eq!(log.front().map(String::as_str), Some("1"));
+        assert_eq!(log.back().map(String::as_str), Some("newest"));
+    }
+
+    #[test]
+    fn append_restores_the_bound_even_if_log_starts_oversized() {
+        let mut log = (0..(MAX_ENTRIES + 2))
+            .map(|n| n.to_string())
+            .collect::<VecDeque<_>>();
+        append_entry(&mut log, "newest".into());
+        assert_eq!(log.len(), MAX_ENTRIES);
+        assert_eq!(log.front().map(String::as_str), Some("3"));
         assert_eq!(log.back().map(String::as_str), Some("newest"));
     }
 
