@@ -645,6 +645,45 @@ mod tests {
     }
 
     #[test]
+    fn valent_device_parser_extracts_devices_and_ignores_other_interfaces() {
+        let object_manager_type = glib::VariantTy::new("a{oa{sa{sv}}}")
+            .expect("ObjectManager reply type should be valid");
+        let reply = glib::Variant::parse(
+            Some(object_manager_type),
+            "{
+                objectpath '/ca/andyholmes/Valent/devices/zeta': {
+                    'ca.andyholmes.Valent.Device': {
+                        'Id': <'zeta-id'>,
+                        'Name': <'Zeta phone'>,
+                        'State': <uint32 2>
+                    },
+                    'org.example.Unrelated': {
+                        'Name': <'Must be ignored'>
+                    }
+                },
+                objectpath '/ca/andyholmes/Valent/devices/alpha': {
+                    'ca.andyholmes.Valent.Device': {
+                        'Id': <'alpha-id'>,
+                        'Name': <'Alpha phone'>,
+                        'State': <uint32 1>
+                    }
+                }
+            }",
+        )
+        .expect("fixture should match the ObjectManager reply signature");
+
+        let devices = parse_valent_devices(&reply);
+
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].id, "alpha-id");
+        assert_eq!(devices[0].name, "Alpha phone");
+        assert_eq!(devices[0].state, 1);
+        assert_eq!(devices[1].id, "zeta-id");
+        assert_eq!(devices[1].name, "Zeta phone");
+        assert_eq!(devices[1].state, 2);
+    }
+
+    #[test]
     fn backend_limitations_do_not_overstate_unverified_features() {
         assert!(VALENT_LIMITATIONS.contains("not verified"));
         assert!(VALENT_LIMITATIONS.contains("not implemented"));
