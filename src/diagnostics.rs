@@ -55,6 +55,29 @@ fn entries() -> &'static Mutex<VecDeque<String>> {
     ENTRIES.get_or_init(|| Mutex::new(VecDeque::with_capacity(MAX_ENTRIES)))
 }
 
+fn should_record(verbosity: u8, level: DiagnosticLevel, event: DiagnosticEvent) -> bool {
+    verbosity != 3 && level as u8 <= verbosity && level == event.level()
+}
+
+fn format_entry(timestamp: u64, level: DiagnosticLevel, event: DiagnosticEvent) -> String {
+    format!(
+        "{{\"timestamp_unix\":{timestamp},\"level\":\"{}\",{}}}",
+        match level {
+            DiagnosticLevel::Error => "error",
+            DiagnosticLevel::Info => "info",
+            DiagnosticLevel::Debug => "debug",
+        },
+        event.fields()
+    )
+}
+
+fn append_entry(entries: &mut VecDeque<String>, line: String) {
+    if entries.len() == MAX_ENTRIES {
+        entries.pop_front();
+    }
+    entries.push_back(line);
+}
+
 fn normalize_verbosity(index: u32) -> u8 {
     index.min(3) as u8
 }
@@ -69,7 +92,7 @@ pub fn verbosity_index() -> u32 {
 
 pub fn record(level: DiagnosticLevel, event: DiagnosticEvent) {
     let verbosity = VERBOSITY.load(Ordering::Relaxed);
-    if verbosity == 3 || level as u8 > verbosity || level != event.level() {
+    if !should_record(verbosity, level, event) {
         return;
     }
 
@@ -77,21 +100,10 @@ pub fn record(level: DiagnosticLevel, event: DiagnosticEvent) {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or_default();
-    let line = format!(
-        "{{\"timestamp_unix\":{timestamp},\"level\":\"{}\",{}}}",
-        match level {
-            DiagnosticLevel::Error => "error",
-            DiagnosticLevel::Info => "info",
-            DiagnosticLevel::Debug => "debug",
-        },
-        event.fields()
-    );
+    let line = format_entry(timestamp, level, event);
 
     if let Ok(mut entries) = entries().lock() {
-        if entries.len() == MAX_ENTRIES {
-            entries.pop_front();
-        }
-        entries.push_back(line);
+        append_entry(&mut entries, line);
     }
 }
 
@@ -128,15 +140,27 @@ mod tests {
         let event = DiagnosticEvent::RefreshSuperseded;
         assert_eq!(event.level(), DiagnosticLevel::Debug);
         assert!(event.fields().contains("backend.refresh_superseded"));
+        assert!(!should_record(1, DiagnosticLevel::Debug, event));
+        assert!(should_record(2, DiagnosticLevel::Debug, event));
+        assert!(!should_record(3, DiagnosticLevel::Debug, event));
     }
 
     #[test]
     fn log_export_is_json_lines() {
-        let previous = verbosity_index();
-        set_verbosity(1);
-        record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
-        let exported = export();
+        let first = format_entry(1, DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
+        let second = format_entry(2, DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
+        let exported = [first, second].join("\\n");
+        assert_eq!(exported.lines().count(), 2);
         assert!(exported.lines().all(|line| line.starts_with("{\"timestamp_unix\"")));
-        set_verbosity(previous);
+        assert!(exported.lines().all(|line| line.ends_with('}')));
+    }
+
+    #[test]
+    fn bounded_log_discards_the_oldest_entry() {
+        let mut log = (0..MAX_ENTRIES).map(|n| n.to_string()).collect::<VecDeque<_>>();
+        append_entry(&mut log, "newest".into());
+        assert_eq!(log.len(), MAX_ENTRIES);
+        assert_eq!(log.front().map(String::as_str), Some("1"));
+        assert_eq!(log.back().map(String::as_str), Some("newest"));
     }
 }
