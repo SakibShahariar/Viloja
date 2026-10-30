@@ -13,6 +13,12 @@ Viloja aims to bring nearby-device file sharing and useful phone-to-desktop inte
 - Explicit empty states rather than fake discovered devices or simulated successful transfers.
 - Backend-specific capabilities and status are intended to be represented honestly in the UI.
 
+## Current backend limitations
+
+The current Valent integration is experimental: it queries the session D-Bus for device objects, but discovery has not been verified against an installed Valent build in a live GNOME session. Pairing remains managed by Valent rather than Viloja. Outbound and inbound file transfers are not implemented. Router-free, hotspot, Wi-Fi Direct, and Bluetooth transfer support has not been verified and is not advertised.
+
+The application repeats these limitations on its main pages so users see them before attempting unavailable actions. These statements describe the current Valent prototype only; they are not claims about future backends.
+
 ## Goals
 
 - Feel at home on GNOME, using GTK4 and libadwaita.

@@ -277,6 +277,12 @@ fn make_card(title: &str, body: &str) -> gtk::Box {
     card
 }
 
+const VALENT_LIMITATIONS: &str = "Device discovery: experimental session-D-Bus query; not verified against an installed Valent/GNOME session. Pairing: handled in Valent, not managed by Viloja. Sending and receiving files: not implemented. Router-free, hotspot, Wi-Fi Direct, and Bluetooth transfers: not verified; no support is claimed.";
+
+fn backend_limitations_card() -> gtk::Box {
+    make_card("Current backend: Valent (experimental)", VALENT_LIMITATIONS)
+}
+
 fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
     let scrolled = gtk::ScrolledWindow::new();
     scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
@@ -322,10 +328,7 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&refresh_button);
     nearby.append(&discovery_status);
     nearby.append(&device_list);
-    nearby.append(&make_card(
-        "File sharing",
-        "Device discovery is connected. Sending and receiving will be enabled after Viloja validates the exported device actions and transfer flow.",
-    ));
+    nearby.append(&backend_limitations_card());
 
     let refresh_state = Rc::new(RefCell::new(RefreshState::default()));
     let window_for_refresh = window.clone();
@@ -352,8 +355,9 @@ fn build_ui(app: &adw::Application) {
 
     let send = make_page(
         "Send files",
-        "Choose files to prepare a transfer. Sending is not available until the real transfer actions are integrated.",
+        "Choose files to prepare a transfer. Viloja cannot send them yet.",
     );
+    send.append(&backend_limitations_card());
     let selection_status = make_label("No files selected.", "");
     let choose_button = gtk::Button::with_label("Choose files…");
     choose_button.add_css_class("suggested-action");
@@ -371,8 +375,9 @@ fn build_ui(app: &adw::Application) {
 
     let transfers = make_page(
         "Transfers",
-        "Incoming and outgoing transfers will be listed here.",
+        "Transfer monitoring is unavailable until a real backend transfer flow is integrated.",
     );
+    transfers.append(&backend_limitations_card());
     transfers.append(&make_card(
         "No transfers yet",
         "Transfer progress, cancellation, completion, and error states will appear once transfer events are integrated.",
@@ -381,8 +386,9 @@ fn build_ui(app: &adw::Application) {
 
     let history = make_page(
         "History",
-        "A local overview of completed and failed transfers.",
+        "Viloja does not yet store transfer history because transfers are not integrated.",
     );
+    history.append(&backend_limitations_card());
     history.append(&make_card(
         "History is empty",
         "Viloja does not record transfer history in this prototype.",
@@ -391,8 +397,9 @@ fn build_ui(app: &adw::Application) {
 
     let settings = make_page(
         "Settings",
-        "Preferences for device discovery, receiving, and privacy.",
+        "Backend availability and transfer preferences will be configurable when those integrations exist.",
     );
+    settings.append(&backend_limitations_card());
     settings.append(&make_card(
         "Receiving",
         "Receiving preferences will be available when the backend exposes its supported options.",
@@ -470,6 +477,13 @@ mod tests {
             name: name.into(),
             state: 1,
         }
+    }
+
+    #[test]
+    fn backend_limitations_do_not_overstate_unverified_features() {
+        assert!(VALENT_LIMITATIONS.contains("not verified"));
+        assert!(VALENT_LIMITATIONS.contains("not implemented"));
+        assert!(VALENT_LIMITATIONS.contains("no support is claimed"));
     }
 
     #[test]
