@@ -119,8 +119,10 @@ impl TransferSnapshot {
     /// Unknown totals and zero-byte transfers have no percentage.
     pub fn progress_percent(&self) -> Option<u8> {
         let total = self.total_bytes.filter(|total| *total > 0)?;
-        let ratio = (self.bytes_transferred.min(total) as f64 / total as f64) * 100.0;
-        Some(ratio.round().clamp(0.0, 100.0) as u8)
+        let transferred = self.bytes_transferred.min(total) as u128;
+        let total = total as u128;
+        let rounded_percent = (transferred * 100 + total / 2) / total;
+        Some(rounded_percent as u8)
     }
 }
 
@@ -200,6 +202,16 @@ mod tests {
     #[test]
     fn progress_never_exceeds_one_hundred_percent() {
         assert_eq!(transfer(120, Some(100)).progress_percent(), Some(100));
+    }
+
+    #[test]
+    fn progress_rounds_fractional_percentages_without_float_precision_loss() {
+        assert_eq!(transfer(1, Some(3)).progress_percent(), Some(33));
+        assert_eq!(transfer(2, Some(3)).progress_percent(), Some(67));
+        assert_eq!(
+            transfer(u64::MAX / 2, Some(u64::MAX)).progress_percent(),
+            Some(50)
+        );
     }
 
     #[test]
