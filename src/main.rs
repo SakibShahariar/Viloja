@@ -668,7 +668,7 @@ mod tests {
                         'State': <uint32 1>
                     }
                 }
-            })",
+            },)",
         )
         .expect("fixture should match the ObjectManager reply signature");
 
