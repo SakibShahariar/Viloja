@@ -520,6 +520,14 @@ fn build_ui(app: &adw::Application) {
     diagnostic_scroll.set_child(Some(&diagnostic_view));
     settings.append(&diagnostic_scroll);
 
+    let refresh_diagnostics = gtk::Button::with_label("Refresh diagnostics");
+    refresh_diagnostics.set_halign(gtk::Align::Start);
+    let refresh_buffer = diagnostic_view.buffer();
+    refresh_diagnostics.connect_clicked(move |_| {
+        refresh_buffer.set_text(&diagnostics::export());
+    });
+    settings.append(&refresh_diagnostics);
+
     let copy_diagnostics = gtk::Button::with_label("Copy diagnostics");
     copy_diagnostics.set_halign(gtk::Align::Start);
     let diagnostic_buffer = diagnostic_view.buffer();
