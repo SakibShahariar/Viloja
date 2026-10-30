@@ -116,3 +116,26 @@ For each test, record:
 - Follow-up issue:
 
 Until these tests pass, keep both integrations experimental and do not advertise router-free operation.
+
+
+## Preparing hardware investigations without claiming support
+
+Issues #31, #32, and #33 require the actual development machine and Android
+device. The repository now includes
+`scripts/collect-connectivity-capabilities.sh` to collect a repeatable Linux
+preflight report for those tests:
+
+```sh
+bash scripts/collect-connectivity-capabilities.sh
+```
+
+The report records the kernel/distribution, PCI and USB adapter/driver
+information, Wi-Fi supported interface modes, radio block state, and detected
+Bluetooth controllers. MAC addresses are redacted in the script output. Review
+the output before sharing it, because host or device names may still be
+identifying.
+
+This is preparation only. It does not test an Android peer, prove hotspot or
+Wi-Fi Direct interoperability, establish Bluetooth transfer support, or
+satisfy the real-device acceptance criteria for issues #31–#33. Those results
+must remain **not tested** until the actual hardware experiments are run.
