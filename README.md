@@ -59,7 +59,7 @@ These remain design goals unless explicitly listed in the current prototype sect
 
 Viloja will use a shared GNOME interface with separate backend implementations. A backend should report its capabilities and own its protocol-specific discovery, pairing, authentication, and transfer operations. The UI must not assume every backend supports the same features.
 
-See [Architecture](docs/ARCHITECTURE.md), [Feasibility notes](docs/FEASIBILITY.md), and the [proof-of-concept plan](docs/POC_PLAN.md).
+See [Architecture](docs/ARCHITECTURE.md), [Feasibility notes](docs/FEASIBILITY.md), and the [proof-of-concept plan](docs/POC_PLAN.md). The current implementation's security boundaries and unimplemented safeguards are recorded in the [security review](docs/SECURITY_REVIEW.md).
 
 ## License
 
