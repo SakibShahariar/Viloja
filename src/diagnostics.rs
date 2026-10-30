@@ -149,7 +149,7 @@ mod tests {
     fn log_export_is_json_lines() {
         let first = format_entry(1, DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
         let second = format_entry(2, DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
-        let exported = [first, second].join("\\n");
+        let exported = [first, second].join("\n");
         assert_eq!(exported.lines().count(), 2);
         assert!(exported.lines().all(|line| line.starts_with("{\"timestamp_unix\"")));
         assert!(exported.lines().all(|line| line.ends_with('}')));
