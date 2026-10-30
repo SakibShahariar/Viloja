@@ -78,6 +78,10 @@ fn append_entry(entries: &mut VecDeque<String>, line: String) {
     entries.push_back(line);
 }
 
+fn clear_entries(entries: &mut VecDeque<String>) {
+    entries.clear();
+}
+
 fn normalize_verbosity(index: u32) -> u8 {
     index.min(3) as u8
 }
@@ -104,6 +108,12 @@ pub fn record(level: DiagnosticLevel, event: DiagnosticEvent) {
 
     if let Ok(mut entries) = entries().lock() {
         append_entry(&mut entries, line);
+    }
+}
+
+pub fn clear() {
+    if let Ok(mut entries) = entries().lock() {
+        clear_entries(&mut entries);
     }
 }
 
@@ -162,5 +172,12 @@ mod tests {
         assert_eq!(log.len(), MAX_ENTRIES);
         assert_eq!(log.front().map(String::as_str), Some("1"));
         assert_eq!(log.back().map(String::as_str), Some("newest"));
+    }
+
+    #[test]
+    fn clearing_diagnostics_removes_all_entries() {
+        let mut log = VecDeque::from(["first".to_string(), "second".to_string()]);
+        clear_entries(&mut log);
+        assert!(log.is_empty());
     }
 }

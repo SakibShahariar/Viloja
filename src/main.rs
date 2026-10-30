@@ -530,6 +530,15 @@ fn build_ui(app: &adw::Application) {
         diagnostic_display.clipboard().set_text(&exported);
     });
     settings.append(&copy_diagnostics);
+
+    let clear_diagnostics = gtk::Button::with_label("Clear diagnostics");
+    clear_diagnostics.set_halign(gtk::Align::Start);
+    let clear_buffer = diagnostic_view.buffer();
+    clear_diagnostics.connect_clicked(move |_| {
+        diagnostics::clear();
+        clear_buffer.set_text("");
+    });
+    settings.append(&clear_diagnostics);
     stack.add_titled(&make_scrolled_page(&settings), Some("settings"), "Settings");
 
     let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
