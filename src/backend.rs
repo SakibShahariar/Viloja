@@ -268,10 +268,13 @@ mod tests {
         }
 
         fn complete_transfer(&mut self, id: &TransferId) {
-            if let Some(transfer) = self.transfers.get_mut(id) {
+            let updated = self.transfers.get_mut(id).map(|transfer| {
                 transfer.state = TransferState::Completed;
                 transfer.bytes_transferred = transfer.total_bytes.unwrap_or(0);
-                self.publish(BackendEvent::TransferUpdated(transfer.clone()));
+                transfer.clone()
+            });
+            if let Some(transfer) = updated {
+                self.publish(BackendEvent::TransferUpdated(transfer));
             }
         }
 
@@ -368,39 +371,47 @@ mod tests {
             transfer_id: &TransferId,
             decision: IncomingDecision,
         ) -> Result<(), BackendError> {
-            let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| BackendError {
-                backend: self.id(),
-                message: "unknown transfer".into(),
-            })?;
-            if transfer.direction != TransferDirection::Incoming
-                || transfer.state != TransferState::AwaitingApproval
-            {
-                return Err(BackendError {
-                    backend: self.id(),
-                    message: "incoming transfer is not awaiting approval".into(),
-                });
-            }
-            transfer.state = match decision {
-                IncomingDecision::Accept => TransferState::InProgress,
-                IncomingDecision::Reject => TransferState::Rejected,
+            let backend_id = self.id();
+            let updated = {
+                let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| BackendError {
+                    backend: backend_id.clone(),
+                    message: "unknown transfer".into(),
+                })?;
+                if transfer.direction != TransferDirection::Incoming
+                    || transfer.state != TransferState::AwaitingApproval
+                {
+                    return Err(BackendError {
+                        backend: backend_id,
+                        message: "incoming transfer is not awaiting approval".into(),
+                    });
+                }
+                transfer.state = match decision {
+                    IncomingDecision::Accept => TransferState::InProgress,
+                    IncomingDecision::Reject => TransferState::Rejected,
+                };
+                transfer.clone()
             };
-            self.publish(BackendEvent::TransferUpdated(transfer.clone()));
+            self.publish(BackendEvent::TransferUpdated(updated));
             Ok(())
         }
 
         fn cancel_transfer(&mut self, transfer_id: &TransferId) -> Result<(), BackendError> {
-            let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| BackendError {
-                backend: self.id(),
-                message: "unknown transfer".into(),
-            })?;
-            if !matches!(transfer.state, TransferState::Queued | TransferState::InProgress) {
-                return Err(BackendError {
-                    backend: self.id(),
-                    message: "transfer is not cancellable".into(),
-                });
-            }
-            transfer.state = TransferState::Cancelled;
-            self.publish(BackendEvent::TransferUpdated(transfer.clone()));
+            let backend_id = self.id();
+            let updated = {
+                let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| BackendError {
+                    backend: backend_id.clone(),
+                    message: "unknown transfer".into(),
+                })?;
+                if !matches!(transfer.state, TransferState::Queued | TransferState::InProgress) {
+                    return Err(BackendError {
+                        backend: backend_id,
+                        message: "transfer is not cancellable".into(),
+                    });
+                }
+                transfer.state = TransferState::Cancelled;
+                transfer.clone()
+            };
+            self.publish(BackendEvent::TransferUpdated(updated));
             Ok(())
         }
     }
