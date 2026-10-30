@@ -195,6 +195,10 @@ fn refresh_valent_devices(
             let connection = match connection_result {
                 Ok(connection) => connection,
                 Err(error) => {
+                    diagnostics::record(
+                        DiagnosticLevel::Error,
+                        DiagnosticEvent::SessionBusUnavailable,
+                    );
                     if finish_refresh(&state_for_bus, request_id) {
                         status_for_bus.set_text(&format!(
                             "Could not connect to the session bus: {error}"
