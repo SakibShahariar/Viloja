@@ -646,11 +646,11 @@ mod tests {
 
     #[test]
     fn valent_device_parser_extracts_devices_and_ignores_other_interfaces() {
-        let object_manager_type = glib::VariantTy::new("a{oa{sa{sv}}}")
+        let object_manager_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
             .expect("ObjectManager reply type should be valid");
         let reply = glib::Variant::parse(
             Some(object_manager_type),
-            "{
+            "({
                 objectpath '/ca/andyholmes/Valent/devices/zeta': {
                     'ca.andyholmes.Valent.Device': {
                         'Id': <'zeta-id'>,
@@ -668,7 +668,7 @@ mod tests {
                         'State': <uint32 1>
                     }
                 }
-            }",
+            })",
         )
         .expect("fixture should match the ObjectManager reply signature");
 
