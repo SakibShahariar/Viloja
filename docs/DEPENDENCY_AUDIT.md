@@ -31,7 +31,7 @@ Package metadata and license references:
 
 The root \`deny.toml\` is the machine-enforced dependency policy. GitHub Actions runs \`cargo-deny\` after Cargo has resolved the graph. The unpublished Viloja workspace package is excluded from third-party dependency license evaluation via \`[licenses.private] ignore = true\`; its own license remains unresolved and distribution remains blocked as described above.
 
-- **Licenses:** only the SPDX identifiers explicitly listed in \`deny.toml\` are accepted. Unknown, unrecognized, GPL, AGPL, LGPL, or other unapproved license expressions fail the check until reviewed and deliberately added.
+- **Licenses:** only Apache-2.0, MIT, and Unicode-3.0 (including permitted combinations of those terms) are explicitly accepted in the current dependency graph. Unknown, unrecognized, GPL, AGPL, LGPL, or other unapproved license expressions fail the check until reviewed and deliberately added.
 - **Advisories:** the RustSec advisory database is checked. Vulnerable, yanked, or unmaintained dependencies are not silently ignored.
 - **Bans:** wildcard dependency requirements are denied; duplicate versions are reported as warnings for review.
 - **Sources:** dependencies from unknown registries or Git sources are denied. The crates.io registry is the only approved source.
