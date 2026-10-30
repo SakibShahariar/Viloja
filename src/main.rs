@@ -615,6 +615,36 @@ mod tests {
     }
 
     #[test]
+    fn valent_connection_labels_cover_each_documented_state() {
+        assert_eq!(device("Connected").connection_label(), "Connected");
+        assert_eq!(
+            ValentDeviceInfo { state: 2, ..device("Paired") }.connection_label(),
+            "Paired · offline"
+        );
+        assert_eq!(
+            ValentDeviceInfo { state: 4, ..device("Incoming") }.connection_label(),
+            "Incoming pairing request"
+        );
+        assert_eq!(
+            ValentDeviceInfo { state: 8, ..device("Outgoing") }.connection_label(),
+            "Outgoing pairing request"
+        );
+        assert_eq!(
+            ValentDeviceInfo { state: 0, ..device("Unknown") }.connection_label(),
+            "Not connected"
+        );
+    }
+
+    #[test]
+    fn connected_state_takes_precedence_over_other_state_bits() {
+        assert_eq!(
+            ValentDeviceInfo { state: 1 | 2 | 4 | 8, ..device("Combined") }
+                .connection_label(),
+            "Connected"
+        );
+    }
+
+    #[test]
     fn backend_limitations_do_not_overstate_unverified_features() {
         assert!(VALENT_LIMITATIONS.contains("not verified"));
         assert!(VALENT_LIMITATIONS.contains("not implemented"));
