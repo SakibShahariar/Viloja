@@ -168,9 +168,10 @@ fn refresh_valent_devices(
     let button_for_bus = refresh_button.clone();
     let state_for_bus = state.clone();
 
+    let bus_cancellable = cancellable.clone();
     gio::bus_get(
         gio::BusType::Session,
-        Some(&cancellable),
+        Some(&bus_cancellable),
         move |connection_result| {
             if window_weak.upgrade().is_none()
                 || !is_current_refresh(&state_for_bus, request_id)
@@ -281,33 +282,6 @@ fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
     scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     scrolled.set_child(Some(content));
     scrolled
-}
-
-fn refresh_valent_devices(status: &gtk::Label, device_list: &gtk::Box) {
-    while let Some(child) = device_list.first_child() {
-        device_list.remove(&child);
-    }
-
-    match read_valent_devices() {
-        Ok(devices) if devices.is_empty() => {
-            status.set_text(
-                "Valent is available, but it has no known devices yet. Open Valent and make sure device discovery is enabled.",
-            );
-        }
-        Ok(devices) => {
-            status.set_text(&format!(
-                "Found {} device{} through Valent.",
-                devices.len(),
-                if devices.len() == 1 { "" } else { "s" }
-            ));
-            for device in devices {
-                let card = make_card(&device.name, device.connection_label());
-                card.set_tooltip_text(Some(&format!("Valent device ID: {}", device.id)));
-                device_list.append(&card);
-            }
-        }
-        Err(error) => status.set_text(&error),
-    }
 }
 
 fn build_ui(app: &adw::Application) {
