@@ -44,6 +44,10 @@ struct RefreshState {
 fn begin_refresh(state: &Rc<RefCell<RefreshState>>) -> (u64, gio::Cancellable) {
     let mut state = state.borrow_mut();
     if let Some(previous) = state.cancellable.take() {
+        diagnostics::record(
+            DiagnosticLevel::Debug,
+            DiagnosticEvent::RefreshSuperseded,
+        );
         previous.cancel();
     }
 

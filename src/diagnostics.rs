@@ -25,6 +25,7 @@ pub enum DiagnosticEvent {
     BackendUnavailable,
     DiscoveryCompleted { device_count: usize },
     BackendDiscoveryFailed,
+    RefreshSuperseded,
 }
 
 impl DiagnosticEvent {
@@ -37,6 +38,7 @@ impl DiagnosticEvent {
                 "\"event\":\"backend.discovery_completed\",\"device_count\":{device_count}"
             ),
             Self::BackendDiscoveryFailed => "\"event\":\"backend.discovery_failed\"".into(),
+            Self::RefreshSuperseded => "\"event\":\"backend.refresh_superseded\"".into(),
         }
     }
 
@@ -44,6 +46,7 @@ impl DiagnosticEvent {
         match self {
             Self::SessionBusUnavailable | Self::BackendUnavailable | Self::BackendDiscoveryFailed => DiagnosticLevel::Error,
             Self::BackendRefreshStarted | Self::DiscoveryCompleted { .. } => DiagnosticLevel::Info,
+            Self::RefreshSuperseded => DiagnosticLevel::Debug,
         }
     }
 }
@@ -52,8 +55,12 @@ fn entries() -> &'static Mutex<VecDeque<String>> {
     ENTRIES.get_or_init(|| Mutex::new(VecDeque::with_capacity(MAX_ENTRIES)))
 }
 
+fn normalize_verbosity(index: u32) -> u8 {
+    index.min(3) as u8
+}
+
 pub fn set_verbosity(index: u32) {
-    VERBOSITY.store(index.min(3) as u8, Ordering::Relaxed);
+    VERBOSITY.store(normalize_verbosity(index), Ordering::Relaxed);
 }
 
 pub fn verbosity_index() -> u32 {
@@ -111,11 +118,16 @@ mod tests {
 
     #[test]
     fn verbosity_levels_are_bounded() {
-        set_verbosity(99);
-        assert_eq!(verbosity_index(), 3);
-        set_verbosity(1);
-        assert_eq!(verbosity_index(), 1);
-        set_verbosity(0);
+        assert_eq!(normalize_verbosity(99), 3);
+        assert_eq!(normalize_verbosity(1), 1);
+        assert_eq!(normalize_verbosity(0), 0);
+    }
+
+    #[test]
+    fn refresh_superseded_is_a_debug_only_event() {
+        let event = DiagnosticEvent::RefreshSuperseded;
+        assert_eq!(event.level(), DiagnosticLevel::Debug);
+        assert!(event.fields().contains("backend.refresh_superseded"));
     }
 
     #[test]
