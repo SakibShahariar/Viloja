@@ -519,7 +519,7 @@ fn build_ui(app: &adw::Application) {
     let copy_diagnostics = gtk::Button::with_label("Copy diagnostics");
     copy_diagnostics.set_halign(gtk::Align::Start);
     let diagnostic_buffer = diagnostic_view.buffer();
-    let diagnostic_display = window.display();
+    let diagnostic_display = gtk::prelude::WidgetExt::display(&window);
     copy_diagnostics.connect_clicked(move |_| {
         let exported = diagnostics::export();
         diagnostic_buffer.set_text(&exported);
