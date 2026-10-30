@@ -1,8 +1,8 @@
 mod backend;
 
 use adw::prelude::*;
-use gio::prelude::*;
-use glib::variant::ToVariant;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
 const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
@@ -32,30 +32,51 @@ impl ValentDeviceInfo {
     }
 }
 
-fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
-    let connection = gio::bus_get_sync(gio::BusType::Session, gio::Cancellable::NONE)
-        .map_err(|error| format!("Could not connect to the session bus: {error}"))?;
+#[derive(Default)]
+struct RefreshState {
+    request_id: u64,
+    cancellable: Option<gio::Cancellable>,
+    closed: bool,
+}
 
-    let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
-        .expect("the ObjectManager reply signature is valid");
-    let reply = connection
-        .call_sync(
-            Some(VALENT_BUS_NAME),
-            VALENT_OBJECT_PATH,
-            OBJECT_MANAGER_INTERFACE,
-            "GetManagedObjects",
-            None,
-            Some(reply_type),
-            gio::DBusCallFlags::NONE,
-            3000,
-            gio::Cancellable::NONE,
-        )
-        .map_err(|error| {
-            format!(
-                "Valent is unavailable or does not expose its device manager: {error}"
-            )
-        })?;
+fn begin_refresh(state: &Rc<RefCell<RefreshState>>) -> (u64, gio::Cancellable) {
+    let mut state = state.borrow_mut();
+    if let Some(previous) = state.cancellable.take() {
+        previous.cancel();
+    }
 
+    state.request_id = state.request_id.wrapping_add(1);
+    let request_id = state.request_id;
+    let cancellable = gio::Cancellable::new();
+    state.cancellable = Some(cancellable.clone());
+    (request_id, cancellable)
+}
+
+fn is_current_refresh(state: &Rc<RefCell<RefreshState>>, request_id: u64) -> bool {
+    let state = state.borrow();
+    !state.closed && state.request_id == request_id
+}
+
+fn finish_refresh(state: &Rc<RefCell<RefreshState>>, request_id: u64) -> bool {
+    let mut state = state.borrow_mut();
+    if state.closed || state.request_id != request_id {
+        return false;
+    }
+
+    state.cancellable = None;
+    true
+}
+
+fn close_refresh(state: &Rc<RefCell<RefreshState>>) {
+    let mut state = state.borrow_mut();
+    state.closed = true;
+    state.request_id = state.request_id.wrapping_add(1);
+    if let Some(cancellable) = state.cancellable.take() {
+        cancellable.cancel();
+    }
+}
+
+fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
     let managed_objects = reply.child_value(0);
     let mut devices = Vec::new();
 
@@ -106,7 +127,119 @@ fn read_valent_devices() -> Result<Vec<ValentDeviceInfo>, String> {
     }
 
     devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok(devices)
+    devices
+}
+
+fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> String {
+    match result {
+        Ok(devices) if devices.is_empty() => {
+            "Valent is available, but it has no known devices yet. Open Valent and make sure device discovery is enabled.".into()
+        }
+        Ok(devices) => format!(
+            "Found {} device{} through Valent.",
+            devices.len(),
+            if devices.len() == 1 { "" } else { "s" }
+        ),
+        Err(error) => error.clone(),
+    }
+}
+
+fn clear_device_list(device_list: &gtk::Box) {
+    while let Some(child) = device_list.first_child() {
+        device_list.remove(&child);
+    }
+}
+
+fn refresh_valent_devices(
+    window: &adw::ApplicationWindow,
+    status: &gtk::Label,
+    device_list: &gtk::Box,
+    refresh_button: &gtk::Button,
+    state: &Rc<RefCell<RefreshState>>,
+) {
+    let (request_id, cancellable) = begin_refresh(state);
+    status.set_text("Refreshing devices…");
+    refresh_button.set_sensitive(false);
+    clear_device_list(device_list);
+
+    let window_weak = window.downgrade();
+    let status_for_bus = status.clone();
+    let list_for_bus = device_list.clone();
+    let button_for_bus = refresh_button.clone();
+    let state_for_bus = state.clone();
+
+    gio::bus_get(
+        gio::BusType::Session,
+        Some(&cancellable),
+        move |connection_result| {
+            if window_weak.upgrade().is_none()
+                || !is_current_refresh(&state_for_bus, request_id)
+            {
+                return;
+            }
+
+            let connection = match connection_result {
+                Ok(connection) => connection,
+                Err(error) => {
+                    if finish_refresh(&state_for_bus, request_id) {
+                        status_for_bus.set_text(&format!(
+                            "Could not connect to the session bus: {error}"
+                        ));
+                        button_for_bus.set_sensitive(true);
+                    }
+                    return;
+                }
+            };
+
+            let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
+                .expect("the ObjectManager reply signature is valid");
+            let state_for_call = state_for_bus.clone();
+            let window_for_call = window_weak.clone();
+            let status_for_call = status_for_bus.clone();
+            let list_for_call = list_for_bus.clone();
+            let button_for_call = button_for_bus.clone();
+
+            connection.call(
+                Some(VALENT_BUS_NAME),
+                VALENT_OBJECT_PATH,
+                OBJECT_MANAGER_INTERFACE,
+                "GetManagedObjects",
+                None,
+                Some(reply_type),
+                gio::DBusCallFlags::NONE,
+                3000,
+                Some(&cancellable),
+                move |reply_result| {
+                    if window_for_call.upgrade().is_none()
+                        || !finish_refresh(&state_for_call, request_id)
+                    {
+                        return;
+                    }
+
+                    button_for_call.set_sensitive(true);
+                    let result = reply_result
+                        .map(|reply| parse_valent_devices(&reply))
+                        .map_err(|error| {
+                            format!(
+                                "Valent is unavailable or does not expose its device manager: {error}"
+                            )
+                        });
+                    status_for_call.set_text(&device_result_status(&result));
+
+                    if let Ok(devices) = result {
+                        for device in devices {
+                            let card = make_card(&device.name, device.connection_label());
+                            card.set_tooltip_text(Some(&format!(
+                                "Valent device ID: {}",
+                                device.id
+                            )));
+                            list_for_call.append(&card);
+                        }
+                    }
+                },
+            );
+        },
+    );
 }
 
 fn make_label(text: &str, css_class: &str) -> gtk::Label {
@@ -220,10 +353,26 @@ fn build_ui(app: &adw::Application) {
         "Device discovery is connected. Sending and receiving will be enabled after Viloja validates the exported device actions and transfer flow.",
     ));
 
+    let refresh_state = Rc::new(RefCell::new(RefreshState::default()));
+    let window_for_refresh = window.clone();
     let status_for_refresh = discovery_status.clone();
     let list_for_refresh = device_list.clone();
+    let button_for_refresh = refresh_button.clone();
+    let state_for_refresh = refresh_state.clone();
     refresh_button.connect_clicked(move |_| {
-        refresh_valent_devices(&status_for_refresh, &list_for_refresh);
+        refresh_valent_devices(
+            &window_for_refresh,
+            &status_for_refresh,
+            &list_for_refresh,
+            &button_for_refresh,
+            &state_for_refresh,
+        );
+    });
+
+    let state_for_close = refresh_state.clone();
+    window.connect_close_request(move |_| {
+        close_refresh(&state_for_close);
+        glib::Propagation::Proceed
     });
     stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
 
@@ -334,4 +483,69 @@ fn main() {
 
     app.connect_activate(build_ui);
     app.run();
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(name: &str) -> ValentDeviceInfo {
+        ValentDeviceInfo {
+            id: format!("device-{name}"),
+            name: name.into(),
+            state: 1,
+        }
+    }
+
+    #[test]
+    fn refresh_status_distinguishes_empty_and_successful_results() {
+        assert!(device_result_status(&Ok(Vec::new())).contains("no known devices"));
+        assert_eq!(
+            device_result_status(&Ok(vec![device("Phone")])),
+            "Found 1 device through Valent."
+        );
+        assert_eq!(
+            device_result_status(&Ok(vec![device("Phone"), device("Laptop")])),
+            "Found 2 devices through Valent."
+        );
+    }
+
+    #[test]
+    fn refresh_status_preserves_unavailable_and_timeout_errors() {
+        assert_eq!(
+            device_result_status(&Err("Valent is unavailable".into())),
+            "Valent is unavailable"
+        );
+        assert_eq!(
+            device_result_status(&Err("D-Bus call timed out".into())),
+            "D-Bus call timed out"
+        );
+    }
+
+    #[test]
+    fn starting_a_new_refresh_cancels_and_invalidates_the_previous_one() {
+        let state = Rc::new(RefCell::new(RefreshState::default()));
+        let (first_id, first_cancellable) = begin_refresh(&state);
+        let (second_id, _) = begin_refresh(&state);
+
+        assert!(first_cancellable.is_cancelled());
+        assert!(second_id > first_id);
+        assert!(!is_current_refresh(&state, first_id));
+        assert!(is_current_refresh(&state, second_id));
+        assert!(!finish_refresh(&state, first_id));
+        assert!(finish_refresh(&state, second_id));
+    }
+
+    #[test]
+    fn closing_the_window_cancels_and_invalidates_an_in_flight_refresh() {
+        let state = Rc::new(RefCell::new(RefreshState::default()));
+        let (request_id, cancellable) = begin_refresh(&state);
+
+        close_refresh(&state);
+
+        assert!(cancellable.is_cancelled());
+        assert!(!is_current_refresh(&state, request_id));
+        assert!(!finish_refresh(&state, request_id));
+    }
 }
