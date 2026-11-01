@@ -786,6 +786,16 @@ mod tests {
     }
 
     #[test]
+    fn selected_device_is_retained_only_while_it_remains_discovered() {
+        let selected = Rc::new(RefCell::new(Some("device-Phone".to_string())));
+        assert!(prune_selected_device(&selected, &[device("Phone")]));
+        assert_eq!(selected.borrow().as_deref(), Some("device-Phone"));
+
+        assert!(!prune_selected_device(&selected, &[device("Laptop")]));
+        assert_eq!(selected.borrow().as_deref(), None);
+    }
+
+    #[test]
     fn valent_connection_labels_cover_each_documented_state() {
         assert_eq!(device("Connected").connection_label(), "Connected");
         assert_eq!(
