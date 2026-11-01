@@ -174,6 +174,19 @@ fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> Strin
     }
 }
 
+fn prune_selected_device(
+    selected_device: &Rc<RefCell<Option<String>>>,
+    devices: &[ValentDeviceInfo],
+) -> bool {
+    let mut selected = selected_device.borrow_mut();
+    if selected.as_ref().is_some_and(|id| devices.iter().any(|device| &device.id == id)) {
+        true
+    } else {
+        *selected = None;
+        false
+    }
+}
+
 fn clear_device_list(device_list: &gtk::Box) {
     while let Some(child) = device_list.first_child() {
         device_list.remove(&child);
@@ -198,6 +211,8 @@ fn install_device_signal_subscriptions(
     refresh_button: &gtk::Button,
     state: &Rc<RefCell<RefreshState>>,
     subscriptions: &DeviceSignalSubscriptions,
+    selected_device: &Rc<RefCell<Option<String>>>,
+    selection_status: &gtk::Label,
 ) {
     clear_device_signal_subscriptions(subscriptions);
 
@@ -207,6 +222,8 @@ fn install_device_signal_subscriptions(
     let refresh_button = refresh_button.clone();
     let state = state.clone();
     let subscriptions_for_refresh = subscriptions.clone();
+    let selected_device_for_refresh = selected_device.clone();
+    let selection_status_for_refresh = selection_status.clone();
     let refresh = Rc::new(move || {
         if let Some(window) = window_weak.upgrade() {
             refresh_valent_devices(
@@ -216,6 +233,8 @@ fn install_device_signal_subscriptions(
                 &refresh_button,
                 &state,
                 &subscriptions_for_refresh,
+                &selected_device_for_refresh,
+                &selection_status_for_refresh,
             );
         }
     });
@@ -266,6 +285,8 @@ fn refresh_valent_devices(
     refresh_button: &gtk::Button,
     state: &Rc<RefCell<RefreshState>>,
     subscriptions: &DeviceSignalSubscriptions,
+    selected_device: &Rc<RefCell<Option<String>>>,
+    selection_status: &gtk::Label,
 ) {
     let (request_id, cancellable) = begin_refresh(state);
     diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
@@ -279,6 +300,8 @@ fn refresh_valent_devices(
     let button_for_bus = refresh_button.clone();
     let state_for_bus = state.clone();
     let subscriptions = subscriptions.clone();
+    let selected_device = selected_device.clone();
+    let selection_status = selection_status.clone();
 
     let bus_cancellable = cancellable.clone();
     gio::bus_get(
@@ -316,6 +339,8 @@ fn refresh_valent_devices(
                 &button_for_bus,
                 &state_for_bus,
                 &subscriptions,
+                &selected_device,
+                &selection_status,
             );
 
             let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
@@ -325,6 +350,8 @@ fn refresh_valent_devices(
             let status_for_call = status_for_bus.clone();
             let list_for_call = list_for_bus.clone();
             let button_for_call = button_for_bus.clone();
+            let selected_device_for_call = selected_device.clone();
+            let selection_status_for_call = selection_status.clone();
 
             connection.call(
                 Some(VALENT_BUS_NAME),
@@ -359,13 +386,28 @@ fn refresh_valent_devices(
                     }
 
                     if let Ok(devices) = result {
+                        if !prune_selected_device(&selected_device_for_call, &devices) {
+                            selection_status_for_call.set_text("No device selected.");
+                        }
                         for device in devices {
                             let card = make_card(&device.name, device.connection_label());
                             card.set_tooltip_text(Some(&format!(
                                 "Valent device ID: {}",
                                 device.id
                             )));
-                            list_for_call.append(&card);
+                            let row = gtk::Button::new();
+                            row.add_css_class("flat");
+                            row.set_hexpand(true);
+                            row.set_child(Some(&card));
+                            let selected = selected_device_for_call.clone();
+                            let selection_status = selection_status_for_call.clone();
+                            let device_id = device.id.clone();
+                            let device_name = device.name.clone();
+                            row.connect_clicked(move |_| {
+                                *selected.borrow_mut() = Some(device_id.clone());
+                                selection_status.set_text(&format!("Selected destination: {device_name}"));
+                            });
+                            list_for_call.append(&row);
                         }
                     }
                 },
@@ -462,9 +504,12 @@ fn build_ui(app: &adw::Application) {
     refresh_button.add_css_class("suggested-action");
     refresh_button.set_halign(gtk::Align::Start);
     let device_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let selected_device: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let selection_status = make_label("No device selected.", "dim-label");
     nearby.append(&refresh_button);
     nearby.append(&discovery_status);
     nearby.append(&device_list);
+    nearby.append(&selection_status);
     nearby.append(&backend_limitations_card());
     nearby.append(&backend_capabilities_card());
 
@@ -476,6 +521,8 @@ fn build_ui(app: &adw::Application) {
     let button_for_refresh = refresh_button.clone();
     let state_for_refresh = refresh_state.clone();
     let subscriptions_for_refresh = device_signal_subscriptions.clone();
+    let selected_device_for_refresh = selected_device.clone();
+    let selection_status_for_refresh = selection_status.clone();
     refresh_button.connect_clicked(move |_| {
         refresh_valent_devices(
             &window_for_refresh,
@@ -484,6 +531,8 @@ fn build_ui(app: &adw::Application) {
             &button_for_refresh,
             &state_for_refresh,
             &subscriptions_for_refresh,
+            &selected_device_for_refresh,
+            &selection_status_for_refresh,
         );
     });
 
@@ -507,11 +556,15 @@ fn build_ui(app: &adw::Application) {
     let button_for_appearance = refresh_button.clone();
     let state_for_appearance = refresh_state.clone();
     let subscriptions_for_appearance = device_signal_subscriptions.clone();
+    let selected_device_for_appearance = selected_device.clone();
+    let selection_status_for_appearance = selection_status.clone();
     let status_for_disappearance = discovery_status.clone();
     let list_for_disappearance = device_list.clone();
     let button_for_disappearance = refresh_button.clone();
     let state_for_disappearance = refresh_state.clone();
     let subscriptions_for_disappearance = device_signal_subscriptions.clone();
+    let selected_device_for_disappearance = selected_device.clone();
+    let selection_status_for_disappearance = selection_status.clone();
     let watcher_id = gio::bus_watch_name(
         gio::BusType::Session,
         VALENT_BUS_NAME,
@@ -524,6 +577,8 @@ fn build_ui(app: &adw::Application) {
                 &button_for_appearance,
                 &state_for_appearance,
                 &subscriptions_for_appearance,
+                &selected_device_for_appearance,
+                &selection_status_for_appearance,
             );
         },
         move |_, _| {
@@ -532,6 +587,8 @@ fn build_ui(app: &adw::Application) {
             }
             invalidate_refresh(&state_for_disappearance);
             clear_device_signal_subscriptions(&subscriptions_for_disappearance);
+            *selected_device_for_disappearance.borrow_mut() = None;
+            selection_status_for_disappearance.set_text("No device selected.");
             diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
             clear_device_list(&list_for_disappearance);
             status_for_disappearance.set_text(
