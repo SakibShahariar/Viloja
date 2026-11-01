@@ -15,9 +15,10 @@ These instructions apply to the entire repository. Follow any more specific `AGE
 
 - Prioritize existing, actionable open issues over speculative features or cosmetic churn.
 - Prefer small, independently verifiable issues that can be completed confidently. Work on multiple independent issues during a maintenance session when practical, without mixing unrelated changes into one commit.
-- Do not close an issue merely because code was changed. Close it only after the stated acceptance criteria are met and the fix has been verified to the extent possible.
-- Reference the relevant issue number in the commit message when a commit fixes an issue (for example, `Fixes #123` in the commit body when appropriate).
-- Keep issues open when validation requires unavailable hardware, a user-specific environment, an interactive desktop session, credentials, or manual confirmation. Explain what remains to be checked instead of claiming completion.
+- Do not close an issue merely because code was changed. Check the issue's current acceptance criteria and close it only when every criterion that can be completed in scope is genuinely satisfied and verified.
+- Use `Fixes #123` in a commit body only when that commit completes the issue and the issue should be closed. Use `Refs #123` for partial work; do not imply closure prematurely.
+- Keep issues open when validation requires unavailable hardware, a user-specific environment, an interactive desktop session, credentials, or manual confirmation. Explain exactly what remains to be checked instead of claiming completion.
+- Distinguish implementation from scaffolding: documentation, mock data, contract fakes, and test fixtures do not prove that a real backend, device, transfer, or GNOME integration works.
 - Do not close user-created issues or mark work as not planned unless the repository owner explicitly directs you to do so.
 
 ## Code Quality and Testing
@@ -26,7 +27,9 @@ These instructions apply to the entire repository. Follow any more specific `AGE
 - Add or update focused tests for behavior changes when the project has a suitable test setup.
 - Run relevant available tests, linters, formatters, type checks, and build checks. Do not add CI workflows or checks without a concrete project need.
 - Inspect the complete output and exit status of every check. Fix failures caused by your changes; investigate pre-existing failures and report them accurately.
-- Review all commits created during the maintenance run and their associated CI/check results, not only the latest commit. Do not report a check as passing unless its result was actually observed.
+- Treat CI as a feedback loop, not a badge: after each commit, inspect its associated run and logs. If a check fails, diagnose the exact cause and fix it before treating the work as complete; do not leave known failures behind or stack dependent changes on an unexplained failure.
+- At the end of each maintenance run, audit every commit created in that run and its associated CI/check result, not only the latest commit. Keep a commit-to-check list until all runs finish. Do not report pending checks as passing.
+- Contract fakes and unit tests verify only the behavior they exercise. They do not prove real Valent/D-Bus behavior, network transfers, device compatibility, filesystem safety, or GNOME integration.
 - Static checks do not prove runtime, graphical, hardware, or platform integration behavior. In particular, do not claim GNOME Shell/session compatibility without testing in a real GNOME session.
 - If a necessary test cannot be run in the available environment, state the limitation clearly and leave validation-dependent work unresolved.
 
@@ -35,8 +38,8 @@ These instructions apply to the entire repository. Follow any more specific `AGE
 - Commit directly to the repository's existing default branch; do not force-push, rewrite history, reset away others' work, or amend published commits.
 - Fetch/review the latest branch state before committing. Keep changes focused and avoid including unrelated modifications.
 - Use the repository's documented commit convention. If none exists, use clear Conventional Commit messages such as `fix(scope): ...`, `feat(scope): ...`, `docs: ...`, or `test: ...`.
-- Include issue references for issue-related commits. Do not create empty or misleading commits.
-- After committing, verify the commit exists on the intended default branch and inspect the resulting diff/status.
+- Include issue references for issue-related commits. Use the repository's `Fixes #N` / `Refs #N` distinction consistently. Do not create empty or misleading commits.
+- After committing, verify the commit exists on the intended default branch, inspect the resulting diff/status, and follow its CI run to a final conclusion before reporting it as verified.
 
 ## Documentation and Dependencies
 
