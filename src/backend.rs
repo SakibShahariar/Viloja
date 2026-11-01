@@ -473,6 +473,62 @@ mod tests {
     }
 
     #[test]
+    fn backend_contract_rejects_invalid_outgoing_requests_without_events() {
+        let mut backend = ContractFakeBackend::new();
+        let receiver = backend.start_with_receiver();
+        let _ = receiver.recv();
+        let _ = receiver.recv();
+
+        assert!(backend.send_files(SendRequest {
+            device_id: backend.device.id.clone(),
+            files: Vec::new(),
+        }).is_err());
+        assert!(backend.send_files(SendRequest {
+            device_id: DeviceId("unknown-device".into()),
+            files: vec![PathBuf::from("/tmp/example.txt")],
+        }).is_err());
+
+        assert!(backend.transfers.is_empty());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
+    fn backend_contract_rejects_invalid_incoming_decisions_without_events() {
+        let mut backend = ContractFakeBackend::new();
+        let receiver = backend.start_with_receiver();
+        let _ = receiver.recv();
+        let _ = receiver.recv();
+
+        let unknown_id = TransferId("missing-transfer".into());
+        assert!(backend.decide_incoming(&unknown_id, IncomingDecision::Accept).is_err());
+
+        let outgoing_id = backend.send_files(SendRequest {
+            device_id: backend.device.id.clone(),
+            files: vec![PathBuf::from("/tmp/example.txt")],
+        }).unwrap();
+        let _ = receive_transfer(&receiver);
+        assert!(backend.decide_incoming(&outgoing_id, IncomingDecision::Accept).is_err());
+
+        let incoming_id = backend.request_incoming();
+        assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
+        backend.decide_incoming(&incoming_id, IncomingDecision::Accept).unwrap();
+        assert_eq!(receive_transfer(&receiver).state, TransferState::InProgress);
+
+        assert!(backend.decide_incoming(&incoming_id, IncomingDecision::Reject).is_err());
+        assert_eq!(
+            backend.transfers.get(&incoming_id).unwrap().state,
+            TransferState::InProgress
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
     fn backend_contract_requires_explicit_incoming_acceptance_or_rejection() {
         let mut backend = ContractFakeBackend::new();
         let receiver = backend.start_with_receiver();
