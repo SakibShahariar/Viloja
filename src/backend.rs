@@ -656,8 +656,8 @@ mod tests {
         let _ = events.recv();
         backend.stop().unwrap();
         assert!(matches!(
-            receiver.try_recv(),
-            Err(mpsc::TryRecvError::Empty)
+            events.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Stopped)
         ));
 
         assert!(backend.send_files(SendRequest {
