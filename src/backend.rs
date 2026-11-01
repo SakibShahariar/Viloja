@@ -409,11 +409,22 @@ mod tests {
 
         fn cancel_transfer(&mut self, transfer_id: &TransferId) -> Result<(), BackendError> {
             let backend_id = self.id();
+            let capabilities = self.snapshot().capabilities;
             let updated = {
                 let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| BackendError {
                     backend: backend_id.clone(),
                     message: "unknown transfer".into(),
                 })?;
+                let cancellation_supported = match transfer.direction {
+                    TransferDirection::Incoming => capabilities.cancel_incoming,
+                    TransferDirection::Outgoing => capabilities.cancel_outgoing,
+                };
+                if !cancellation_supported {
+                    return Err(BackendError {
+                        backend: backend_id,
+                        message: "backend does not support cancelling this transfer direction".into(),
+                    });
+                }
                 if !matches!(transfer.state, TransferState::Queued | TransferState::InProgress) {
                     return Err(BackendError {
                         backend: backend_id,
@@ -477,6 +488,32 @@ mod tests {
         assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
         backend.decide_incoming(&rejected_id, IncomingDecision::Reject).unwrap();
         assert_eq!(receive_transfer(&receiver).state, TransferState::Rejected);
+    }
+
+    #[test]
+    fn backend_contract_rejects_incoming_cancellation_when_capability_is_disabled() {
+        let mut backend = ContractFakeBackend::new();
+        let receiver = backend.start_with_receiver();
+        let _ = receiver.recv();
+        let _ = receiver.recv();
+
+        let incoming_id = backend.request_incoming();
+        assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
+        backend.decide_incoming(&incoming_id, IncomingDecision::Accept).unwrap();
+        assert!(matches!(
+            receive_transfer(&receiver).state,
+            TransferState::InProgress
+        ));
+
+        assert!(backend.cancel_transfer(&incoming_id).is_err());
+        assert!(matches!(
+            backend.transfers.get(&incoming_id).unwrap().state,
+            TransferState::InProgress
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
     }
 
     #[test]
