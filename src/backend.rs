@@ -517,6 +517,39 @@ mod tests {
     }
 
     #[test]
+    fn backend_contract_rejects_unknown_and_completed_transfer_cancellation() {
+        let mut backend = ContractFakeBackend::new();
+        let receiver = backend.start_with_receiver();
+        let _ = receiver.recv();
+        let _ = receiver.recv();
+
+        let unknown_id = TransferId("missing-transfer".into());
+        assert!(backend.cancel_transfer(&unknown_id).is_err());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        let completed_id = backend.send_files(SendRequest {
+            device_id: backend.device.id.clone(),
+            files: vec![PathBuf::from("/tmp/completed.txt")],
+        }).unwrap();
+        let _ = receive_transfer(&receiver);
+        backend.complete_transfer(&completed_id);
+        assert_eq!(receive_transfer(&receiver).state, TransferState::Completed);
+
+        assert!(backend.cancel_transfer(&completed_id).is_err());
+        assert_eq!(
+            backend.transfers.get(&completed_id).unwrap().state,
+            TransferState::Completed
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
     fn backend_contract_covers_cancellation_disconnect_and_restart() {
         let mut backend = ContractFakeBackend::new();
         let receiver = backend.start_with_receiver();
