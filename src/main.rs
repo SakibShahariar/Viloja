@@ -180,7 +180,7 @@ fn clear_device_list(device_list: &gtk::Box) {
     }
 }
 
-type DeviceSignalSubscriptions = Rc<RefCell<Option<(gio::DBusConnection, Vec<u32>)>>>;
+type DeviceSignalSubscriptions = Rc<RefCell<Option<(gio::DBusConnection, Vec<gio::SignalSubscriptionId>)>>>;
 
 fn clear_device_signal_subscriptions(subscriptions: &DeviceSignalSubscriptions) {
     if let Some((connection, ids)) = subscriptions.borrow_mut().take() {
