@@ -698,6 +698,46 @@ mod tests {
     }
 
     #[test]
+    fn valent_device_parser_falls_back_from_blank_or_mistyped_metadata() {
+        let object_manager_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
+            .expect("ObjectManager reply type should be valid");
+        let reply = glib::Variant::parse(
+            Some(object_manager_type),
+            "({
+                objectpath '/ca/andyholmes/Valent/devices/fallback': {
+                    'ca.andyholmes.Valent.Device': {
+                        'Id': <''>,
+                        'Name': <'   '>,
+                        'State': <uint32 0>
+                    }
+                },
+                objectpath '/ca/andyholmes/Valent/devices/valid': {
+                    'ca.andyholmes.Valent.Device': {
+                        'Id': <' valid-id '>,
+                        'Name': <'  Android phone  '>,
+                        'State': <uint32 1>
+                    }
+                }
+            },)",
+        )
+        .expect("fixture should match the ObjectManager reply signature");
+
+        let devices = parse_valent_devices(&reply);
+        let fallback = devices
+            .iter()
+            .find(|device| device.id.ends_with("/fallback"))
+            .expect("fallback device should be retained");
+        assert_eq!(fallback.id, "/ca/andyholmes/Valent/devices/fallback");
+        assert_eq!(fallback.name, "Unnamed device");
+
+        let valid = devices
+            .iter()
+            .find(|device| device.id == "valid-id")
+            .expect("valid device should be retained");
+        assert_eq!(valid.name, "Android phone");
+    }
+
+    #[test]
     fn backend_limitations_do_not_overstate_unverified_features() {
         assert!(VALENT_LIMITATIONS.contains("not verified"));
         assert!(VALENT_LIMITATIONS.contains("not implemented"));
