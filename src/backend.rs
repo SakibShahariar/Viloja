@@ -667,7 +667,7 @@ mod tests {
         assert!(backend.transfers.is_empty());
         assert!(matches!(
             events.try_recv(),
-            Err(mpsc::TryRecvError::Empty)
+            Err(mpsc::TryRecvError::Disconnected)
         ));
     }
 
