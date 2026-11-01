@@ -655,6 +655,10 @@ mod tests {
         let _ = events.recv();
         let _ = events.recv();
         backend.stop().unwrap();
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
 
         assert!(backend.send_files(SendRequest {
             device_id: backend.device.id.clone(),
