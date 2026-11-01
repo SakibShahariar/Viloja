@@ -187,6 +187,10 @@ fn prune_selected_device(
     }
 }
 
+fn clear_selected_device(selected_device: &Rc<RefCell<Option<String>>>) -> bool {
+    selected_device.borrow_mut().take().is_some()
+}
+
 fn clear_device_list(device_list: &gtk::Box) {
     while let Some(child) = device_list.first_child() {
         device_list.remove(&child);
@@ -409,6 +413,9 @@ fn refresh_valent_devices(
                             });
                             list_for_call.append(&row);
                         }
+                    } else {
+                        clear_selected_device(&selected_device_for_call);
+                        selection_status_for_call.set_text("No device selected.");
                     }
                 },
             );
@@ -587,7 +594,7 @@ fn build_ui(app: &adw::Application) {
             }
             invalidate_refresh(&state_for_disappearance);
             clear_device_signal_subscriptions(&subscriptions_for_disappearance);
-            *selected_device_for_disappearance.borrow_mut() = None;
+            clear_selected_device(&selected_device_for_disappearance);
             selection_status_for_disappearance.set_text("No device selected.");
             diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
             clear_device_list(&list_for_disappearance);
@@ -793,6 +800,14 @@ mod tests {
 
         assert!(!prune_selected_device(&selected, &[device("Laptop")]));
         assert_eq!(selected.borrow().as_deref(), None);
+    }
+
+    #[test]
+    fn selected_device_is_cleared_when_discovery_becomes_unavailable() {
+        let selected = Rc::new(RefCell::new(Some("device-Phone".to_string())));
+        assert!(clear_selected_device(&selected));
+        assert_eq!(selected.borrow().as_deref(), None);
+        assert!(!clear_selected_device(&selected));
     }
 
     #[test]
