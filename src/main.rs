@@ -192,14 +192,20 @@ fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> Strin
 fn prune_selected_device(
     selected_device: &Rc<RefCell<Option<String>>>,
     devices: &[ValentDeviceInfo],
-) -> bool {
+) -> Option<String> {
     let mut selected = selected_device.borrow_mut();
-    if selected.as_ref().is_some_and(|id| devices.iter().any(|device| &device.id == id)) {
-        true
-    } else {
+    let selected_name = selected.as_ref().and_then(|id| {
+        devices
+            .iter()
+            .find(|device| &device.id == id)
+            .map(|device| device.name.clone())
+    });
+
+    if selected_name.is_none() {
         *selected = None;
-        false
     }
+
+    selected_name
 }
 
 fn clear_selected_device(selected_device: &Rc<RefCell<Option<String>>>) -> bool {
@@ -407,8 +413,10 @@ fn refresh_valent_devices(
                     }
 
                     if let Ok(devices) = result {
-                        if !prune_selected_device(&selected_device_for_call, &devices) {
-                            selection_status_for_call.set_text("No device selected.");
+                        match prune_selected_device(&selected_device_for_call, &devices) {
+                            Some(name) => selection_status_for_call
+                                .set_text(&format!("Selected destination: {name}")),
+                            None => selection_status_for_call.set_text("No device selected."),
                         }
                         for device in devices {
                             let card = make_card(&device.name, device.connection_label());
@@ -822,12 +830,27 @@ mod tests {
     }
 
     #[test]
-    fn selected_device_is_retained_only_while_it_remains_discovered() {
+    fn selected_device_name_tracks_refreshes_and_selection_is_pruned_when_missing() {
         let selected = Rc::new(RefCell::new(Some("device-Phone".to_string())));
-        assert!(prune_selected_device(&selected, &[device("Phone")]));
+
+        assert_eq!(
+            prune_selected_device(&selected, &[device("Phone")]).as_deref(),
+            Some("Phone")
+        );
         assert_eq!(selected.borrow().as_deref(), Some("device-Phone"));
 
-        assert!(!prune_selected_device(&selected, &[device("Laptop")]));
+        let renamed = ValentDeviceInfo {
+            id: "device-Phone".into(),
+            name: "Renamed phone".into(),
+            ..device("Phone")
+        };
+        assert_eq!(
+            prune_selected_device(&selected, &[renamed]).as_deref(),
+            Some("Renamed phone")
+        );
+        assert_eq!(selected.borrow().as_deref(), Some("device-Phone"));
+
+        assert_eq!(prune_selected_device(&selected, &[device("Laptop")]), None);
         assert_eq!(selected.borrow().as_deref(), None);
     }
 
