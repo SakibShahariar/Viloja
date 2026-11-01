@@ -341,6 +341,8 @@ fn refresh_valent_devices(
                         DiagnosticEvent::SessionBusUnavailable,
                     );
                     if finish_refresh(&state_for_bus, request_id) {
+                        clear_selected_device(&selected_device);
+                        selection_status.set_text("No device selected.");
                         status_for_bus.set_text(&format!(
                             "Could not connect to the session bus: {error}"
                         ));
