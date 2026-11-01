@@ -10,6 +10,30 @@ This document describes the intended boundaries. It is not a claim that these co
 4. **Graceful degradation.** An unavailable backend or unsupported transport should not prevent other backends from working.
 5. **GNOME-first.** Prefer GTK4, libadwaita, GNOME platform conventions, accessibility, and system color-scheme support.
 
+## Implemented contract baseline
+
+The repository currently defines a Rust contract in `src/backend.rs`. It is a protocol-independent starting point, not a production backend and not yet the interface consumed by the GTK pages.
+
+The contract currently provides:
+
+- `BackendId`, `DeviceId`, and `TransferId` identifiers, with device and transfer IDs scoped to a backend.
+- `Device` metadata, device type, paired/reachable flags, and explicit backend capabilities.
+- `BackendState` values for unavailable, stopped, starting, running, stopping, and failed states.
+- `BackendEvent` variants for backend state, device discovery/update/loss, incoming requests, and transfer updates.
+- `TransferSnapshot` with direction, lifecycle state, byte counts, and a bounded optional percentage.
+- `SharingBackend` operations for start/stop, outgoing requests, incoming decisions, and cancellation.
+
+### Contract semantics
+
+- A backend must publish state changes and device/transfer events through the supplied event sender.
+- A successful send request returns a transfer identifier; it does not mean the transfer completed. Completion must arrive as a terminal transfer event.
+- Incoming requests begin in `AwaitingApproval`; the UI must obtain an explicit accept/reject decision before treating them as accepted.
+- Cancellation is backend-capability-dependent. Unsupported directions and terminal transfers must return an error without fabricating a cancelled state.
+- Progress is unknown when the total is absent or zero, and must never exceed 100 percent.
+- Backend/device/transfer identifiers must be interpreted within their backend scope.
+
+The contract tests exercise a fake implementation for these semantics. They validate the shared model and fake adapter only; they do not establish real network, device, filesystem-cleanup, or GNOME behavior.
+
 ## Proposed layers
 
 ### 1. GNOME application layer
