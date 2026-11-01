@@ -4,7 +4,7 @@
 
 Viloja aims to bring nearby-device file sharing and useful phone-to-desktop integration into one focused GNOME application. Its design goal is a polished GTK4/libadwaita experience with independent backends, so each supported sharing system can evolve without coupling the whole app to one protocol.
 
-> **Status: frontend prototype.** The first GTK4/libadwaita application shell is in progress. Device discovery, pairing, receiving, and actual file transfers are not implemented yet. The UI must not be mistaken for a working sharing application.
+> **Status: frontend prototype.** The GTK4/libadwaita application shell and a basic Valent session-D-Bus device-query path are implemented. Live discovery has not yet been verified against an installed Valent service in a GNOME session. Pairing remains managed by Valent; inbound reception and actual file transfers are not implemented yet. The UI must not be mistaken for a working sharing application.
 
 ## Current prototype
 
