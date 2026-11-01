@@ -180,12 +180,92 @@ fn clear_device_list(device_list: &gtk::Box) {
     }
 }
 
+type DeviceSignalSubscriptions = Rc<RefCell<Option<(gio::DBusConnection, Vec<u32>)>>>;
+
+fn clear_device_signal_subscriptions(subscriptions: &DeviceSignalSubscriptions) {
+    if let Some((connection, ids)) = subscriptions.borrow_mut().take() {
+        for id in ids {
+            connection.signal_unsubscribe(id);
+        }
+    }
+}
+
+fn install_device_signal_subscriptions(
+    connection: &gio::DBusConnection,
+    window: &adw::ApplicationWindow,
+    status: &gtk::Label,
+    device_list: &gtk::Box,
+    refresh_button: &gtk::Button,
+    state: &Rc<RefCell<RefreshState>>,
+    subscriptions: &DeviceSignalSubscriptions,
+) {
+    clear_device_signal_subscriptions(subscriptions);
+
+    let window_weak = window.downgrade();
+    let status = status.clone();
+    let device_list = device_list.clone();
+    let refresh_button = refresh_button.clone();
+    let state = state.clone();
+    let subscriptions_for_refresh = subscriptions.clone();
+    let refresh = Rc::new(move || {
+        if let Some(window) = window_weak.upgrade() {
+            refresh_valent_devices(
+                &window,
+                &status,
+                &device_list,
+                &refresh_button,
+                &state,
+                &subscriptions_for_refresh,
+            );
+        }
+    });
+
+    let properties_refresh = refresh.clone();
+    let properties_id = connection.signal_subscribe(
+        Some(VALENT_BUS_NAME),
+        Some("org.freedesktop.DBus.Properties"),
+        Some("PropertiesChanged"),
+        None,
+        Some(VALENT_DEVICE_INTERFACE),
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, _| properties_refresh(),
+    );
+
+    let added_refresh = refresh.clone();
+    let added_id = connection.signal_subscribe(
+        Some(VALENT_BUS_NAME),
+        Some(OBJECT_MANAGER_INTERFACE),
+        Some("InterfacesAdded"),
+        Some(VALENT_OBJECT_PATH),
+        None,
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, _| added_refresh(),
+    );
+
+    let removed_id = connection.signal_subscribe(
+        Some(VALENT_BUS_NAME),
+        Some(OBJECT_MANAGER_INTERFACE),
+        Some("InterfacesRemoved"),
+        Some(VALENT_OBJECT_PATH),
+        None,
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, _| refresh(),
+    );
+
+    *subscriptions.borrow_mut() = Some((connection.clone(), vec![
+        properties_id,
+        added_id,
+        removed_id,
+    ]));
+}
+
 fn refresh_valent_devices(
     window: &adw::ApplicationWindow,
     status: &gtk::Label,
     device_list: &gtk::Box,
     refresh_button: &gtk::Button,
     state: &Rc<RefCell<RefreshState>>,
+    subscriptions: &DeviceSignalSubscriptions,
 ) {
     let (request_id, cancellable) = begin_refresh(state);
     diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
@@ -198,6 +278,7 @@ fn refresh_valent_devices(
     let list_for_bus = device_list.clone();
     let button_for_bus = refresh_button.clone();
     let state_for_bus = state.clone();
+    let subscriptions = subscriptions.clone();
 
     let bus_cancellable = cancellable.clone();
     gio::bus_get(
@@ -226,6 +307,16 @@ fn refresh_valent_devices(
                     return;
                 }
             };
+
+            install_device_signal_subscriptions(
+                &connection,
+                &window_weak.upgrade().expect("window was checked above"),
+                &status_for_bus,
+                &list_for_bus,
+                &button_for_bus,
+                &state_for_bus,
+                &subscriptions,
+            );
 
             let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
                 .expect("the ObjectManager reply signature is valid");
@@ -378,11 +469,13 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&backend_capabilities_card());
 
     let refresh_state = Rc::new(RefCell::new(RefreshState::default()));
+    let device_signal_subscriptions: DeviceSignalSubscriptions = Rc::new(RefCell::new(None));
     let window_for_refresh = window.clone();
     let status_for_refresh = discovery_status.clone();
     let list_for_refresh = device_list.clone();
     let button_for_refresh = refresh_button.clone();
     let state_for_refresh = refresh_state.clone();
+    let subscriptions_for_refresh = device_signal_subscriptions.clone();
     refresh_button.connect_clicked(move |_| {
         refresh_valent_devices(
             &window_for_refresh,
@@ -390,14 +483,17 @@ fn build_ui(app: &adw::Application) {
             &list_for_refresh,
             &button_for_refresh,
             &state_for_refresh,
+            &subscriptions_for_refresh,
         );
     });
 
     let state_for_close = refresh_state.clone();
+    let subscriptions_for_close = device_signal_subscriptions.clone();
     let watcher_for_close = Rc::new(RefCell::new(None));
     let watcher_for_close_request = watcher_for_close.clone();
     window.connect_close_request(move |_| {
         close_refresh(&state_for_close);
+        clear_device_signal_subscriptions(&subscriptions_for_close);
         if let Some(watcher_id) = watcher_for_close_request.borrow_mut().take() {
             gio::bus_unwatch_name(watcher_id);
         }
@@ -410,10 +506,12 @@ fn build_ui(app: &adw::Application) {
     let list_for_appearance = device_list.clone();
     let button_for_appearance = refresh_button.clone();
     let state_for_appearance = refresh_state.clone();
+    let subscriptions_for_appearance = device_signal_subscriptions.clone();
     let status_for_disappearance = discovery_status.clone();
     let list_for_disappearance = device_list.clone();
     let button_for_disappearance = refresh_button.clone();
     let state_for_disappearance = refresh_state.clone();
+    let subscriptions_for_disappearance = device_signal_subscriptions.clone();
     let watcher_id = gio::bus_watch_name(
         gio::BusType::Session,
         VALENT_BUS_NAME,
@@ -425,6 +523,7 @@ fn build_ui(app: &adw::Application) {
                 &list_for_appearance,
                 &button_for_appearance,
                 &state_for_appearance,
+                &subscriptions_for_appearance,
             );
         },
         move |_, _| {
@@ -432,6 +531,7 @@ fn build_ui(app: &adw::Application) {
                 return;
             }
             invalidate_refresh(&state_for_disappearance);
+            clear_device_signal_subscriptions(&subscriptions_for_disappearance);
             diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
             clear_device_list(&list_for_disappearance);
             status_for_disappearance.set_text(
