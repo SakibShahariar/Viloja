@@ -15,6 +15,7 @@ const OBJECT_MANAGER_INTERFACE: &str = "org.freedesktop.DBus.ObjectManager";
 struct ValentDeviceInfo {
     id: String,
     name: String,
+    icon_name: String,
     state: u32,
 }
 
@@ -113,6 +114,7 @@ fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
             let properties = interface_entry.child_value(1);
             let mut id = object_path.clone();
             let mut name = String::from("Unnamed device");
+            let mut icon_name = String::new();
             let mut state = 0_u32;
 
             for property_entry in properties.iter() {
@@ -145,12 +147,25 @@ fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
                             }
                         }
                     }
+                    "IconName" => {
+                        if let Some(candidate) = value.get::<String>() {
+                            let candidate = candidate.trim();
+                            if !candidate.is_empty() {
+                                icon_name = candidate.to_owned();
+                            }
+                        }
+                    }
                     "State" => state = value.get::<u32>().unwrap_or(state),
                     _ => {}
                 }
             }
 
-            devices.push(ValentDeviceInfo { id, name, state });
+            devices.push(ValentDeviceInfo {
+                id,
+                name,
+                icon_name,
+                state,
+            });
         }
     }
 
@@ -399,10 +414,21 @@ fn refresh_valent_devices(
                                 "Valent device ID: {}",
                                 device.id
                             )));
+                            let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                            let icon_name = if device.icon_name.is_empty() {
+                                "computer-symbolic"
+                            } else {
+                                &device.icon_name
+                            };
+                            let icon = gtk::Image::from_icon_name(icon_name);
+                            icon.set_pixel_size(32);
+                            row_content.append(&icon);
+                            row_content.append(&card);
+
                             let row = gtk::Button::new();
                             row.add_css_class("flat");
                             row.set_hexpand(true);
-                            row.set_child(Some(&card));
+                            row.set_child(Some(&row_content));
                             let selected = selected_device_for_call.clone();
                             let selection_status = selection_status_for_call.clone();
                             let device_id = device.id.clone();
@@ -788,6 +814,7 @@ mod tests {
         ValentDeviceInfo {
             id: format!("device-{name}"),
             name: name.into(),
+            icon_name: String::new(),
             state: 1,
         }
     }
@@ -851,6 +878,7 @@ mod tests {
                     'ca.andyholmes.Valent.Device': {
                         'Id': <'zeta-id'>,
                         'Name': <'Zeta phone'>,
+                        'IconName': <'phone-symbolic'>,
                         'State': <uint32 2>
                     },
                     'org.example.Unrelated': {
@@ -876,6 +904,7 @@ mod tests {
         assert_eq!(devices[0].state, 1);
         assert_eq!(devices[1].id, "zeta-id");
         assert_eq!(devices[1].name, "Zeta phone");
+        assert_eq!(devices[1].icon_name, "phone-symbolic");
         assert_eq!(devices[1].state, 2);
     }
 
