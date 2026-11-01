@@ -129,8 +129,22 @@ fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
                 };
 
                 match property_name.as_str() {
-                    "Id" => id = value.get::<String>().unwrap_or(id),
-                    "Name" => name = value.get::<String>().unwrap_or(name),
+                    "Id" => {
+                        if let Some(candidate) = value.get::<String>() {
+                            let candidate = candidate.trim();
+                            if !candidate.is_empty() {
+                                id = candidate.to_owned();
+                            }
+                        }
+                    }
+                    "Name" => {
+                        if let Some(candidate) = value.get::<String>() {
+                            let candidate = candidate.trim();
+                            if !candidate.is_empty() {
+                                name = candidate.to_owned();
+                            }
+                        }
+                    }
                     "State" => state = value.get::<u32>().unwrap_or(state),
                     _ => {}
                 }
