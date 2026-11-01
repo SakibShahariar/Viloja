@@ -630,6 +630,44 @@ mod tests {
     }
 
     #[test]
+    fn backend_contract_rejects_sends_while_unavailable_or_stopped() {
+        let mut backend = ContractFakeBackend::new();
+        backend.available = false;
+        let (sender, receiver) = mpsc::channel();
+
+        assert!(backend.start(sender).is_err());
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Unavailable { .. })
+        ));
+        assert!(backend.send_files(SendRequest {
+            device_id: backend.device.id.clone(),
+            files: vec![PathBuf::from("/tmp/example.txt")],
+        }).is_err());
+        assert!(backend.transfers.is_empty());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        backend.available = true;
+        let events = backend.start_with_receiver();
+        let _ = events.recv();
+        let _ = events.recv();
+        backend.stop().unwrap();
+
+        assert!(backend.send_files(SendRequest {
+            device_id: backend.device.id.clone(),
+            files: vec![PathBuf::from("/tmp/example.txt")],
+        }).is_err());
+        assert!(backend.transfers.is_empty());
+        assert!(matches!(
+            events.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+    }
+
+    #[test]
     fn backend_contract_reports_unavailable_service_and_can_recover() {
         let mut backend = ContractFakeBackend::new();
         backend.available = false;
