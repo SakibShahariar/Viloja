@@ -626,7 +626,10 @@ mod tests {
 
         let restarted = backend.start_with_receiver();
         assert!(matches!(restarted.recv().unwrap(), BackendEvent::StateChanged(BackendState::Running)));
-        assert!(matches!(restarted.recv().unwrap(), BackendEvent::DeviceDiscovered(_)));
+        match restarted.recv().unwrap() {
+            BackendEvent::DeviceDiscovered(device) => assert!(device.reachable),
+            other => panic!("expected device discovery after restart, received {other:?}"),
+        }
     }
 
     #[test]
