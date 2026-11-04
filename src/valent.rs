@@ -224,21 +224,23 @@ pub(crate) fn subscribe_device_changes(
     *subscriptions.borrow_mut() = Some((connection.clone(), vec![properties_id, added_id, removed_id]));
 }
 
-pub(crate) struct NameWatcher(gio::dbus::WatcherId);
+pub(crate) struct NameWatcher(Box<dyn FnOnce()>);
 
 pub(crate) fn watch_name(
     appeared: impl Fn() + 'static,
     vanished: impl Fn() + 'static,
 ) -> NameWatcher {
-    NameWatcher(gio::bus_watch_name(
+    let watcher_id = gio::bus_watch_name(
         gio::BusType::Session,
         VALENT_BUS_NAME,
         gio::BusNameWatcherFlags::NONE,
         move |_, _, _| appeared(),
         move |_, _| vanished(),
-    ))
+    );
+
+    NameWatcher(Box::new(move || gio::bus_unwatch_name(watcher_id)))
 }
 
 pub(crate) fn unwatch_name(watcher_id: NameWatcher) {
-    gio::bus_unwatch_name(watcher_id.0);
+    (watcher_id.0)();
 }
