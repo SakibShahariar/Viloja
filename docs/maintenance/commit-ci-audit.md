@@ -177,3 +177,27 @@ Reviewed commit `a573874643d160008f1e6b31ef6d6c4f7ac22552` after the previous ch
 
 - Checkpoint: `a573874643d160008f1e6b31ef6d6c4f7ac22552`
 - Unresolved red entries in this reviewed range: none.
+
+
+### Incremental audit: 2026-11-04 (shared device contract)
+
+Reviewed every commit after checkpoint `a573874643d160008f1e6b31ef6d6c4f7ac22552` through `fdc2a17bfc1925ff242b17ea90eeff234152d349`. Push-triggered Rust CI runs were queried by exact head SHA; results below are the completed run conclusions.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `69d6dd0eba269aba14f473abe2f69a7de6e9ced8` | docs(maintenance): record adapter boundary CI verification | green | [41862409662](https://github.com/SakibShahariar/Viloja/actions/runs/41862409662) | Completed successfully. |
+| `1b98c69e1ed89e940b8ed17cf233d55575c4fced` | chore(license): adopt GPL-3.0-or-later (#38) | green | [41862972264](https://github.com/SakibShahariar/Viloja/actions/runs/41862972264) | Completed successfully. |
+| `ecc726b1328f337e0f94ba2b5d2a471e9c2fcef2` | docs(readme): identify GPL-3.0-or-later license (#38) | green | [41862979658](https://github.com/SakibShahariar/Viloja/actions/runs/41862979658) | Completed successfully. |
+| `600abbf9888e1c8a16d24985f6080963d75cae06` | chore(cargo): declare GPL-3.0-or-later metadata (#38) | green | [41862986025](https://github.com/SakibShahariar/Viloja/actions/runs/41862986025) | Completed successfully. |
+| `057fe365470ba248a0464b7038d484aabe0b3098` | docs(maintenance): record project GPL license (#38) | green | [41862993746](https://github.com/SakibShahariar/Viloja/actions/runs/41862993746) | Completed successfully. |
+| `12ce3835c960286905df461880970cf9e8f766c9` | docs(agents): enforce evidence-based acceptance criteria | green | [41863813814](https://github.com/SakibShahariar/Viloja/actions/runs/41863813814) | Completed successfully. |
+| `d478354fd90b3c41cae41ad76797b63aa900a44b` | feat(valent): map discovery into backend contract (#7) | red | [41874616019](https://github.com/SakibShahariar/Viloja/actions/runs/41874616019) | Cargo check rejected a misplaced derive attribute applied to a constant. Corrected by the following commit; failure details were inspected from the job log. |
+| `1794a7e3e13adc1c1d8349445ba4b9fdd859edfb` | fix(valent): keep device metadata derive on its type (#7) | green | [41874670943](https://github.com/SakibShahariar/Viloja/actions/runs/41874670943) | cargo check, cargo-deny, and all 42 Rust tests passed. |
+| `fdc2a17bfc1925ff242b17ea90eeff234152d349` | refactor(ui): render shared backend device models (#7) | green | [41874987009](https://github.com/SakibShahariar/Viloja/actions/runs/41874987009) | cargo check, cargo-deny, and all 42 Rust tests passed. GTK discovery rows and selection pruning now consume the shared `backend::Device` model; Valent still owns discovery orchestration. |
+
+#### Resolved CI regression
+
+The only red run in this range was introduced by `d478354fd90b3c41cae41ad76797b63aa900a44b`. Its `#[derive(Debug, Clone)]` attribute was accidentally left above the new backend identifier constant instead of the `ValentDeviceInfo` struct. Commit `1794a7e3e13adc1c1d8349445ba4b9fdd859edfb` moved the derive attribute back to the struct; the associated run passed cargo check, cargo-deny, and 42/42 tests. The subsequent UI model migration also passed all checks and tests.
+
+- Checkpoint: `fdc2a17bfc1925ff242b17ea90eeff234152d349`
+- Unresolved red or pending entries in this reviewed range: none.

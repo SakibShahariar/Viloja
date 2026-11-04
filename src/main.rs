@@ -310,10 +310,42 @@ fn backend_limitations_card() -> gtk::Box {
     make_card("Current backend: Valent (experimental)", VALENT_LIMITATIONS)
 }
 
-const VALENT_CAPABILITIES: &str = "Discovery: experimental session-D-Bus query (availability is shown on Nearby after refresh). Pairing: delegated to Valent; Viloja does not start or manage pairing. Send files: unavailable in Viloja. Receive files: unavailable in Viloja. Transfer cancellation: unavailable. Router-free transfer: unknown and not supported as a Viloja feature.";
+fn backend_capabilities_text(snapshot: &backend::BackendSnapshot) -> String {
+    let capabilities = snapshot.capabilities;
+    let discovery = if capabilities.discovery {
+        "experimental"
+    } else {
+        "unavailable"
+    };
+    let pairing = if capabilities.pairing {
+        "available"
+    } else {
+        "unavailable in Viloja (managed externally by Valent)"
+    };
+    let sending = if capabilities.send_files { "available" } else { "unavailable" };
+    let receiving = if capabilities.receive_files { "available" } else { "unavailable" };
+    let cancellation = if capabilities.cancel_outgoing || capabilities.cancel_incoming {
+        "available for supported transfer directions"
+    } else {
+        "unavailable"
+    };
+    let router_free = if capabilities.router_free_transfer {
+        "available"
+    } else {
+        "unknown / not provided by this adapter"
+    };
 
-fn backend_capabilities_card() -> gtk::Box {
-    make_card("Valent backend capabilities", VALENT_CAPABILITIES)
+    format!(
+        "Discovery: {discovery}. Pairing: {pairing}. Send files: {sending}. Receive files: {receiving}. Transfer cancellation: {cancellation}. Router-free transfer: {router_free}."
+    )
+}
+
+fn backend_capabilities_card(snapshot: &backend::BackendSnapshot) -> gtk::Box {
+    let body = backend_capabilities_text(snapshot);
+    make_card(
+        &format!("{} backend capabilities", snapshot.display_name),
+        &body,
+    )
 }
 
 fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
@@ -330,6 +362,8 @@ fn build_ui(app: &adw::Application) {
         .default_width(1000)
         .default_height(700)
         .build();
+
+    let backend_snapshot = valent::backend_snapshot(backend::BackendState::Stopped);
 
     let header = adw::HeaderBar::new();
     let app_title = gtk::Label::new(Some("Viloja"));
@@ -365,7 +399,7 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&device_list);
     nearby.append(&selection_status);
     nearby.append(&backend_limitations_card());
-    nearby.append(&backend_capabilities_card());
+    nearby.append(&backend_capabilities_card(&backend_snapshot));
 
     let refresh_state = Rc::new(RefCell::new(RefreshState::default()));
     let device_signal_subscriptions: DeviceSignalSubscriptions = Rc::new(RefCell::new(None));
@@ -499,7 +533,7 @@ fn build_ui(app: &adw::Application) {
         "Backend availability and transfer preferences will be configurable when those integrations exist.",
     );
     settings.append(&backend_limitations_card());
-    settings.append(&backend_capabilities_card());
+    settings.append(&backend_capabilities_card(&backend_snapshot));
     settings.append(&make_card(
         "Receiving",
         "Receiving preferences will be available when the backend exposes its supported options.",
@@ -801,13 +835,16 @@ mod tests {
     }
 
     #[test]
-    fn valent_capability_report_marks_unimplemented_actions_unavailable() {
-        assert!(VALENT_CAPABILITIES.contains("Discovery: experimental"));
-        assert!(VALENT_CAPABILITIES.contains("Pairing: delegated to Valent"));
-        assert!(VALENT_CAPABILITIES.contains("Send files: unavailable"));
-        assert!(VALENT_CAPABILITIES.contains("Receive files: unavailable"));
-        assert!(VALENT_CAPABILITIES.contains("Transfer cancellation: unavailable"));
-        assert!(VALENT_CAPABILITIES.contains("Router-free transfer: unknown"));
+    fn capability_report_comes_from_the_shared_backend_snapshot() {
+        let snapshot = valent::backend_snapshot(backend::BackendState::Stopped);
+        let report = backend_capabilities_text(&snapshot);
+
+        assert!(report.contains("Discovery: experimental"));
+        assert!(report.contains("Pairing: unavailable in Viloja"));
+        assert!(report.contains("Send files: unavailable"));
+        assert!(report.contains("Receive files: unavailable"));
+        assert!(report.contains("Transfer cancellation: unavailable"));
+        assert!(report.contains("Router-free transfer: unknown"));
     }
 
     #[test]

@@ -20,11 +20,11 @@ pub(crate) const OBJECT_MANAGER_INTERFACE: &str = "org.freedesktop.DBus.ObjectMa
 pub(crate) const BACKEND_ID: &str = "valent";
 
 /// Describe the capabilities Viloja currently implements for the Valent adapter.
-pub(crate) fn backend_snapshot() -> BackendSnapshot {
+pub(crate) fn backend_snapshot(state: BackendState) -> BackendSnapshot {
     BackendSnapshot {
         id: BackendId(BACKEND_ID.into()),
         display_name: "Valent".into(),
-        state: BackendState::Running,
+        state,
         capabilities: BackendCapabilities {
             discovery: true,
             send_files: false,
@@ -329,11 +329,11 @@ mod backend_contract_tests {
 
     #[test]
     fn valent_snapshot_does_not_claim_unimplemented_transfer_features() {
-        let snapshot = backend_snapshot();
+        let snapshot = backend_snapshot(BackendState::Stopped);
 
         assert_eq!(snapshot.id, BackendId(BACKEND_ID.into()));
         assert_eq!(snapshot.display_name, "Valent");
-        assert_eq!(snapshot.state, BackendState::Running);
+        assert_eq!(snapshot.state, BackendState::Stopped);
         assert!(snapshot.capabilities.discovery);
         assert!(!snapshot.capabilities.send_files);
         assert!(!snapshot.capabilities.receive_files);
