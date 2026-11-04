@@ -236,9 +236,9 @@ pub(crate) fn watch_name(
         gio::BusNameWatcherFlags::NONE,
         move |_, _, _| appeared(),
         move |_, _| vanished(),
-    )
+    ))
 }
 
-pub(crate) fn unwatch_name(watcher_id: gio::OwnerId) {
-    gio::bus_unwatch_name(watcher_id);
+pub(crate) fn unwatch_name(watcher_id: NameWatcher) {
+    gio::bus_unwatch_name(watcher_id.0);
 }
