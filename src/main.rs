@@ -151,7 +151,7 @@ fn backend_limitations_card() -> gtk::Box {
 }
 
 fn backend_capabilities_text(snapshot: &backend::BackendSnapshot) -> String {
-    let availability = match snapshot.state {
+    let availability = match &snapshot.state {
         backend::BackendState::Unavailable { .. } => "unavailable",
         backend::BackendState::Stopped => "stopped",
         backend::BackendState::Starting => "starting",
