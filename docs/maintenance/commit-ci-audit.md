@@ -24,7 +24,7 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `644f438425f87e3e0dd4682a983392e2a9fae215`
+- Checkpoint SHA: `a573874643d160008f1e6b31ef6d6c4f7ac22552`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
 - Next session: review commits after `644f438425f87e3e0dd4682a983392e2a9fae215`; carry unresolved red/pending entries forward.
@@ -165,3 +165,15 @@ Reviewed commits after checkpoint `462e0968aea18e26b3cdfe9c86e101e11e2f0f15` thr
 All red entries in this range were regressions introduced during the D-Bus boundary extraction. The successive fixes corrected the GTK cleanup references, moved the watcher handle behind a closure so the private GIO type is never named, and closed the watcher through that wrapper. Commit `644f438425f87e3e0dd4682a983392e2a9fae215` is the final correction; its associated run completed successfully with 38/38 tests. No red result remains unresolved in this range.
 
 - Checkpoint: `644f438425f87e3e0dd4682a983392e2a9fae215`
+
+
+### Incremental audit: 2026-11-04 (adapter boundary documentation)
+
+Reviewed commit `a573874643d160008f1e6b31ef6d6c4f7ac22552` after the previous checkpoint.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `a573874643d160008f1e6b31ef6d6c4f7ac22552` | docs(architecture): record Valent adapter boundary (#7) | green | [41855215011](https://github.com/SakibShahariar/Viloja/actions/runs/41855215011) | The cargo-check job completed successfully: Rust check, cargo-deny, and 38/38 tests passed. The commit documents that GTK still orchestrates discovery through Valent-specific helpers and the shared `SharingBackend` contract is not yet wired into the frontend. |
+
+- Checkpoint: `a573874643d160008f1e6b31ef6d6c4f7ac22552`
+- Unresolved red entries in this reviewed range: none.
