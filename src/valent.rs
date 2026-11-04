@@ -160,10 +160,9 @@ pub fn query_devices(
     );
 }
 
-use std::cell::RefCell;
-use std::rc::Rc;
 
-pub(crate) type DeviceSignalSubscriptions = Rc<RefCell<Option<(gio::DBusConnection, Vec<gio::SignalSubscriptionId>)>>>;
+pub(crate) type DeviceSignalSubscriptions =
+    Rc<RefCell<Option<(gio::DBusConnection, Vec<gio::SignalSubscriptionId>)>>>;
 
 pub(crate) fn connect_session_bus(
     cancellable: &gio::Cancellable,

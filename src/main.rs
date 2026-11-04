@@ -431,7 +431,7 @@ fn build_ui(app: &adw::Application) {
                 return;
             }
             invalidate_refresh(&state_for_disappearance);
-            clear_device_signal_subscriptions(&subscriptions_for_disappearance);
+            valent::clear_device_signal_subscriptions(&subscriptions_for_disappearance);
             clear_selected_device(&selected_device_for_disappearance);
             selection_status_for_disappearance.set_text("No device selected.");
             diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
