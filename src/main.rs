@@ -188,6 +188,16 @@ fn backend_capabilities_card(snapshot: &backend::BackendSnapshot) -> gtk::Box {
     )
 }
 
+fn render_backend_capabilities(
+    container: &gtk::Box,
+    registry: &backend::BackendRegistry,
+) {
+    clear_device_list(container);
+    for snapshot in registry.snapshots() {
+        container.append(&backend_capabilities_card(&snapshot));
+    }
+}
+
 fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
     let scrolled = gtk::ScrolledWindow::new();
     scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
@@ -206,6 +216,9 @@ fn build_ui(app: &adw::Application) {
     let backend: Rc<RefCell<Box<dyn backend::SharingBackend>>> =
         Rc::new(RefCell::new(valent::create_backend()));
     let backend_snapshot = backend.borrow().snapshot();
+    let mut initial_registry = backend::BackendRegistry::default();
+    initial_registry.register(backend_snapshot);
+    let backend_registry = Rc::new(RefCell::new(initial_registry));
     let (event_sender, event_receiver) = mpsc::channel::<backend::BackendEvent>();
     let known_devices: Rc<RefCell<HashMap<backend::DeviceId, backend::Device>>> =
         Rc::new(RefCell::new(HashMap::new()));
@@ -242,7 +255,9 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&device_list);
     nearby.append(&selection_status);
     nearby.append(&backend_limitations_card());
-    nearby.append(&backend_capabilities_card(&backend_snapshot));
+    let nearby_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    render_backend_capabilities(&nearby_backend_cards, &backend_registry.borrow());
+    nearby.append(&nearby_backend_cards);
 
     let backend_for_refresh = backend.clone();
     let events_for_refresh = event_sender.clone();
@@ -432,7 +447,9 @@ fn build_ui(app: &adw::Application) {
         "Backend availability and transfer preferences will be configurable when those integrations exist.",
     );
     settings.append(&backend_limitations_card());
-    settings.append(&backend_capabilities_card(&backend_snapshot));
+    let settings_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    render_backend_capabilities(&settings_backend_cards, &backend_registry.borrow());
+    settings.append(&settings_backend_cards);
     settings.append(&make_card(
         "Receiving",
         "Receiving preferences will be available when the backend exposes its supported options.",
