@@ -24,7 +24,7 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `432760a9525b59fed4f7158a6c82babf71e8e49b`
+- Checkpoint SHA: `1446db7e3de1a7b41d95b9da4f6cba6722c2aa37`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
 - Next session: review commits after this checkpoint, including the ledger and `AGENTS.md` setup commits; investigate any older red/pending commit specifically identified by the owner.
@@ -97,3 +97,8 @@ The next checkpoint remains `38f5edde4ac793923107b62a3c6db134ef500eea`; review n
 | Commit SHA | Subject | CI result | Workflow run | Notes |
 |---|---|---|---|---|
 | `432760a9525b59fed4f7158a6c82babf71e8e49b` | feat(backend): add pairing operations to shared contract (#7) | green | [41837966329](https://github.com/SakibShahariar/Viloja/actions/runs/41837966329) | Added async pair/unpair operations and device update events; cargo check, cargo-deny, and all 36 Rust tests passed. |
+
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `1446db7e3de1a7b41d95b9da4f6cba6722c2aa37` | test(backend): cover unsupported pairing capability (#7) | green | [41838512434](https://github.com/SakibShahariar/Viloja/actions/runs/41838512434) | cargo check, cargo-deny, and all 37 Rust tests passed. |

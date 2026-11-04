@@ -26,6 +26,7 @@ The contract currently provides:
 ### Contract semantics
 
 - A backend must publish state changes and device/transfer events through the supplied event sender.
+- Backend errors carry a typed category and retryability flag. UI-facing messages are fixed, safe summaries; raw backend details remain diagnostic-only and must not be displayed or copied into privacy-safe logs.
 - Lifecycle and transfer operations are asynchronous. Dropping an unpolled or in-flight operation future is cancellation, not success; adapters should release or cancel their own in-progress resources when the future is dropped.
 - A successful send request returns a transfer identifier; it does not mean the transfer completed. Completion must arrive as a terminal transfer event.
 - Incoming requests begin in `AwaitingApproval`; the UI must obtain an explicit accept/reject decision before treating them as accepted.

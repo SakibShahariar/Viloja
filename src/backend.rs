@@ -138,15 +138,67 @@ pub enum BackendEvent {
     TransferUpdated(TransferSnapshot),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendErrorKind {
+    DeviceUnavailable,
+    Network,
+    PermissionDenied,
+    ServiceUnavailable,
+    Unsupported,
+    InvalidRequest,
+    Unknown,
+}
+
+impl BackendErrorKind {
+    pub const fn user_message(self) -> &'static str {
+        match self {
+            Self::DeviceUnavailable => "That device is no longer available. Refresh nearby devices and try again.",
+            Self::Network => "The connection was interrupted. Check both devices and try again.",
+            Self::PermissionDenied => "Viloja does not have permission to access the selected file or location.",
+            Self::ServiceUnavailable => "The sharing service is unavailable. Reconnect the backend and try again.",
+            Self::Unsupported => "This action is not supported by the selected backend.",
+            Self::InvalidRequest => "The request is invalid or no longer applies. Review it and try again.",
+            Self::Unknown => "The operation could not be completed. Try again or inspect diagnostics.",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackendError {
     pub backend: BackendId,
+    pub kind: BackendErrorKind,
+    /// Raw backend detail for diagnostics only; never display this directly to users.
     pub message: String,
+    pub retryable: bool,
+}
+
+impl BackendError {
+    pub fn new(
+        backend: BackendId,
+        kind: BackendErrorKind,
+        message: impl Into<String>,
+        retryable: bool,
+    ) -> Self {
+        Self {
+            backend,
+            kind,
+            message: message.into(),
+            retryable,
+        }
+    }
+
+    pub const fn user_message(&self) -> &'static str {
+        self.kind.user_message()
+    }
+
+    pub const fn is_retryable(&self) -> bool {
+        self.retryable
+    }
 }
 
 impl std::fmt::Display for BackendError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.backend.0, self.message)
+        f.write_str(self.user_message())
     }
 }
 
@@ -232,6 +284,32 @@ mod tests {
             bytes_transferred,
             total_bytes,
         }
+    }
+
+    #[test]
+    fn backend_errors_provide_safe_messages_and_retry_guidance() {
+        let network = BackendError::new(
+            BackendId("test".into()),
+            BackendErrorKind::Network,
+            "peer=192.0.2.15 token=private-value",
+            true,
+        );
+
+        assert!(network.user_message().contains("connection was interrupted"));
+        assert!(network.is_retryable());
+        assert!(!network.user_message().contains("192.0.2.15"));
+        assert!(!network.to_string().contains("private-value"));
+        assert_eq!(network.message, "peer=192.0.2.15 token=private-value");
+
+        let denied = BackendError::new(
+            BackendId("test".into()),
+            BackendErrorKind::PermissionDenied,
+            "raw permission failure",
+            false,
+        );
+        assert!(denied.user_message().contains("does not have permission"));
+        assert!(!denied.is_retryable());
+        assert!(!denied.to_string().contains("raw permission failure"));
     }
 
     #[test]
@@ -408,16 +486,10 @@ mod tests {
         ) -> BackendFuture<'a, Result<(), BackendError>> {
             Box::pin(async move {
                 if !self.snapshot().capabilities.pairing {
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "backend does not support pairing".into(),
-                    });
+                    return Err(BackendError::new(self.id(), BackendErrorKind::Unsupported, "backend does not support pairing", false));
                 }
                 if &self.device.id != device_id {
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "unknown device".into(),
-                    });
+                    return Err(BackendError::new(self.id(), BackendErrorKind::DeviceUnavailable, "unknown device", false));
                 }
 
                 self.device.paired = true;
@@ -432,10 +504,7 @@ mod tests {
         ) -> BackendFuture<'a, Result<(), BackendError>> {
             Box::pin(async move {
                 if !self.snapshot().capabilities.pairing {
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "backend does not support unpairing".into(),
-                    });
+                    return Err(BackendError::new(self.id(), BackendErrorKind::Unsupported, "backend does not support unpairing", false));
                 }
                 if &self.device.id != device_id {
                     return Err(BackendError {
@@ -461,10 +530,7 @@ mod tests {
                         reason: "test service unavailable".into(),
                     };
                     self.publish(BackendEvent::StateChanged(self.state.clone()));
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "test service unavailable".into(),
-                    });
+                    return Err(BackendError::new(self.id(), BackendErrorKind::ServiceUnavailable, "test service unavailable", true));
                 }
 
                 self.state = BackendState::Running;
@@ -489,17 +555,11 @@ mod tests {
         ) -> BackendFuture<'_, Result<TransferId, BackendError>> {
             Box::pin(async move {
                 if self.state != BackendState::Running {
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "backend is not running".into(),
-                    });
+                    return Err(BackendError::new(self.id(), BackendErrorKind::ServiceUnavailable, "backend is not running", true));
                 }
 
                 if request.device_id != self.device.id || request.files.is_empty() {
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "invalid destination or empty file selection".into(),
-                    });
+                    return Err(BackendError::new(self.id(), BackendErrorKind::InvalidRequest, "invalid destination or empty file selection", false));
                 }
 
                 let id = TransferId(format!("outgoing-{}", self.next_transfer_id));
@@ -530,18 +590,12 @@ mod tests {
                     let transfer = self
                         .transfers
                         .get_mut(transfer_id)
-                        .ok_or_else(|| BackendError {
-                            backend: backend_id.clone(),
-                            message: "unknown transfer".into(),
-                        })?;
+                        .ok_or_else(|| BackendError::new(backend_id.clone(), BackendErrorKind::InvalidRequest, "unknown transfer", false))?;
 
                     if transfer.direction != TransferDirection::Incoming
                         || transfer.state != TransferState::AwaitingApproval
                     {
-                        return Err(BackendError {
-                            backend: backend_id,
-                            message: "incoming transfer is not awaiting approval".into(),
-                        });
+                        return Err(BackendError::new(backend_id, BackendErrorKind::InvalidRequest, "incoming transfer is not awaiting approval", false));
                     }
 
                     transfer.state = match decision {
@@ -577,21 +631,14 @@ mod tests {
                         TransferDirection::Outgoing => capabilities.cancel_outgoing,
                     };
                     if !supported {
-                        return Err(BackendError {
-                            backend: backend_id,
-                            message: "backend does not support cancelling this transfer direction"
-                                .into(),
-                        });
+                        return Err(BackendError::new(backend_id, BackendErrorKind::Unsupported, "backend does not support cancelling this transfer direction", false));
                     }
 
                     if !matches!(
                         transfer.state,
                         TransferState::Queued | TransferState::InProgress
                     ) {
-                        return Err(BackendError {
-                            backend: backend_id,
-                            message: "transfer is not cancellable".into(),
-                        });
+                        return Err(BackendError::new(backend_id, BackendErrorKind::InvalidRequest, "transfer is not cancellable", false));
                     }
 
                     transfer.state = TransferState::Cancelled;
