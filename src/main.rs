@@ -308,18 +308,6 @@ fn build_ui(app: &adw::Application) {
 
             match event {
                 backend::BackendEvent::StateChanged(state) => {
-                    registry_for_events.borrow_mut().update_state(
-                        &backend::BackendId("valent".into()),
-                        state.clone(),
-                    );
-                    render_backend_capabilities(
-                        &nearby_cards_for_events,
-                        &registry_for_events.borrow(),
-                    );
-                    render_backend_capabilities(
-                        &settings_cards_for_events,
-                        &registry_for_events.borrow(),
-                    );
                     match state {
                     backend::BackendState::Starting => {
                         status_for_events.set_text("Connecting to the sharing backend…");
@@ -404,6 +392,11 @@ fn build_ui(app: &adw::Application) {
                         &selected_for_events,
                         &selection_for_events,
                     );
+                }
+                backend::BackendEvent::BackendSnapshotChanged(snapshot) => {
+                    registry_for_events.borrow_mut().register(snapshot);
+                    render_backend_capabilities(&nearby_cards_for_events, &registry_for_events.borrow());
+                    render_backend_capabilities(&settings_cards_for_events, &registry_for_events.borrow());
                 }
                 backend::BackendEvent::IncomingTransfer(_)
                 | backend::BackendEvent::TransferUpdated(_) => {}
