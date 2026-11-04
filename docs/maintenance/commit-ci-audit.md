@@ -24,7 +24,7 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `3ab307e5a8cb3af776e4cff6bee00dae2251e6c0`
+- Checkpoint SHA: `b8a41cf7c62d8e94fd6472447b5cde3cfc14364c`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
 - Next session: review commits after this checkpoint, including the ledger and `AGENTS.md` setup commits; investigate any older red/pending commit specifically identified by the owner.
@@ -120,3 +120,10 @@ The next checkpoint remains `38f5edde4ac793923107b62a3c6db134ef500eea`; review n
 | Commit SHA | Subject | CI result | Workflow run | Notes |
 |---|---|---|---|---|
 | `3ab307e5a8cb3af776e4cff6bee00dae2251e6c0` | docs(security): record typed backend error privacy boundary (#18) | green | [41840304968](https://github.com/SakibShahariar/Viloja/actions/runs/41840304968) | cargo check, cargo-deny, and all 38 Rust tests passed. |
+
+
+### Privacy-safe discovery errors
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `b8a41cf7c62d8e94fd6472447b5cde3cfc14364c` | fix(privacy): hide raw Valent errors and device IDs (#18) | green | [41842032602](https://github.com/SakibShahariar/Viloja/actions/runs/41842032602) | cargo check, cargo-deny, and all 38 Rust tests passed. Raw D-Bus errors and device IDs are no longer exposed in discovery UI. |

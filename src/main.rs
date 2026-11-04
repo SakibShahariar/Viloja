@@ -339,7 +339,7 @@ fn refresh_valent_devices(
 
             let connection = match connection_result {
                 Ok(connection) => connection,
-                Err(error) => {
+                Err(_) => {
                     diagnostics::record(
                         DiagnosticLevel::Error,
                         DiagnosticEvent::SessionBusUnavailable,
