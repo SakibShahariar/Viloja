@@ -227,7 +227,7 @@ pub(crate) fn subscribe_device_changes(
 pub(crate) fn watch_name(
     appeared: impl Fn() + 'static,
     vanished: impl Fn() + 'static,
-) -> gio::OwnerId {
+) -> gio::WatcherId {
     gio::bus_watch_name(
         gio::BusType::Session,
         VALENT_BUS_NAME,

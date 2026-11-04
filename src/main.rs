@@ -2,7 +2,7 @@ mod backend;
 mod diagnostics;
 mod valent;
 
-use valent::{device_result_status, parse_valent_devices, DeviceSignalSubscriptions, ValentDeviceInfo};
+use valent::{device_result_status, DeviceSignalSubscriptions, ValentDeviceInfo};
 
 use adw::prelude::*;
 use std::cell::RefCell;
@@ -621,6 +621,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::valent::parse_valent_devices;
 
     fn device(name: &str) -> ValentDeviceInfo {
         ValentDeviceInfo {
