@@ -127,3 +127,20 @@ The next checkpoint remains `38f5edde4ac793923107b62a3c6db134ef500eea`; review n
 | Commit SHA | Subject | CI result | Workflow run | Notes |
 |---|---|---|---|---|
 | `b8a41cf7c62d8e94fd6472447b5cde3cfc14364c` | fix(privacy): hide raw Valent errors and device IDs (#18) | green | [41842032602](https://github.com/SakibShahariar/Viloja/actions/runs/41842032602) | cargo check, cargo-deny, and all 38 Rust tests passed. Raw D-Bus errors and device IDs are no longer exposed in discovery UI. |
+
+
+### Incremental audit: 2026-11-04 (Valent extraction)
+
+Reviewed commits after checkpoint `b8a41cf7c62d8e94fd6472447b5cde3cfc14364c` through `462e0968aea18e26b3cdfe9c86e101e11e2f0f15`.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `6301411a8452b26a067e55d0fcd3a8422dc930b8` | chore: remove unused D-Bus error binding (#18) | green | [41842589086](https://github.com/SakibShahariar/Viloja/actions/runs/41842589086) | cargo check, cargo-deny, and Rust tests completed successfully. |
+| `30105f12936ecb9ff87a2e29c01ff1e191e59bbe` | refactor(valent): isolate discovery protocol model (#7) | red | [41851578423](https://github.com/SakibShahariar/Viloja/actions/runs/41851578423) | First extraction attempt left Valent constants private to the child module and retained an unused import. Cargo check failed with four E0603 errors. |
+| `6007d22890d133237f0d574ea901a2993e892cab` | fix(valent): expose protocol constants to app layer (#7) | green | [41851761633](https://github.com/SakibShahariar/Viloja/actions/runs/41851761633) | Made protocol constants crate-visible and removed the unused import; cargo check, cargo-deny, and all 38 tests passed. This resolves the previous commit's compile regression. |
+| `462e0968aea18e26b3cdfe9c86e101e11e2f0f15` | refactor(valent): move ObjectManager query behind adapter module (#7) | green | [41852357635](https://github.com/SakibShahariar/Viloja/actions/runs/41852357635) | Moved the ObjectManager method call into the Valent module; cargo check, cargo-deny, and all 38 tests passed. |
+
+The extraction is still incomplete: D-Bus session-bus acquisition, signal subscriptions, and name watching are being moved behind the Valent module; the GTK frontend must ultimately consume the shared `SharingBackend` contract. No issue acceptance checkbox is marked complete yet.
+
+- Checkpoint: `462e0968aea18e26b3cdfe9c86e101e11e2f0f15`
+- Unresolved red entries in this reviewed range: `30105f12936ecb9ff87a2e29c01ff1e191e59bbe` (corrected by `6007d22890d133237f0d574ea901a2993e892cab`).

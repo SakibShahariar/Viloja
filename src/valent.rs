@@ -159,3 +159,82 @@ pub fn query_devices(
         },
     );
 }
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+pub(crate) type DeviceSignalSubscriptions = Rc<RefCell<Option<(gio::DBusConnection, Vec<gio::SignalSubscriptionId>)>>>;
+
+pub(crate) fn connect_session_bus(
+    cancellable: &gio::Cancellable,
+    callback: impl FnOnce(Result<gio::DBusConnection, glib::Error>) + 'static,
+) {
+    gio::bus_get(gio::BusType::Session, Some(cancellable), callback);
+}
+
+pub(crate) fn clear_device_signal_subscriptions(subscriptions: &DeviceSignalSubscriptions) {
+    if let Some((connection, ids)) = subscriptions.borrow_mut().take() {
+        for id in ids {
+            connection.signal_unsubscribe(id);
+        }
+    }
+}
+
+pub(crate) fn subscribe_device_changes(
+    connection: &gio::DBusConnection,
+    refresh: Rc<dyn Fn()>,
+    subscriptions: &DeviceSignalSubscriptions,
+) {
+    clear_device_signal_subscriptions(subscriptions);
+
+    let properties_refresh = refresh.clone();
+    let properties_id = connection.signal_subscribe(
+        Some(VALENT_BUS_NAME),
+        Some("org.freedesktop.DBus.Properties"),
+        Some("PropertiesChanged"),
+        None,
+        Some(VALENT_DEVICE_INTERFACE),
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, _| properties_refresh(),
+    );
+
+    let added_refresh = refresh.clone();
+    let added_id = connection.signal_subscribe(
+        Some(VALENT_BUS_NAME),
+        Some(OBJECT_MANAGER_INTERFACE),
+        Some("InterfacesAdded"),
+        Some(VALENT_OBJECT_PATH),
+        None,
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, _| added_refresh(),
+    );
+
+    let removed_id = connection.signal_subscribe(
+        Some(VALENT_BUS_NAME),
+        Some(OBJECT_MANAGER_INTERFACE),
+        Some("InterfacesRemoved"),
+        Some(VALENT_OBJECT_PATH),
+        None,
+        gio::DBusSignalFlags::NONE,
+        move |_, _, _, _, _, _| refresh(),
+    );
+
+    *subscriptions.borrow_mut() = Some((connection.clone(), vec![properties_id, added_id, removed_id]));
+}
+
+pub(crate) fn watch_name(
+    appeared: impl Fn() + 'static,
+    vanished: impl Fn() + 'static,
+) -> gio::OwnerId {
+    gio::bus_watch_name(
+        gio::BusType::Session,
+        VALENT_BUS_NAME,
+        gio::BusNameWatcherFlags::NONE,
+        move |_, _, _| appeared(),
+        move |_, _| vanished(),
+    )
+}
+
+pub(crate) fn unwatch_name(watcher_id: gio::OwnerId) {
+    gio::bus_unwatch_name(watcher_id);
+}

@@ -2,7 +2,7 @@ mod backend;
 mod diagnostics;
 mod valent;
 
-use valent::{device_result_status, parse_valent_devices, ValentDeviceInfo, VALENT_BUS_NAME, VALENT_OBJECT_PATH, VALENT_DEVICE_INTERFACE, OBJECT_MANAGER_INTERFACE};
+use valent::{device_result_status, parse_valent_devices, DeviceSignalSubscriptions, ValentDeviceInfo};
 
 use adw::prelude::*;
 use std::cell::RefCell;
@@ -95,16 +95,6 @@ fn clear_device_list(device_list: &gtk::Box) {
     }
 }
 
-type DeviceSignalSubscriptions = Rc<RefCell<Option<(gio::DBusConnection, Vec<gio::SignalSubscriptionId>)>>>;
-
-fn clear_device_signal_subscriptions(subscriptions: &DeviceSignalSubscriptions) {
-    if let Some((connection, ids)) = subscriptions.borrow_mut().take() {
-        for id in ids {
-            connection.signal_unsubscribe(id);
-        }
-    }
-}
-
 fn install_device_signal_subscriptions(
     connection: &gio::DBusConnection,
     window: &adw::ApplicationWindow,
@@ -116,7 +106,7 @@ fn install_device_signal_subscriptions(
     selected_device: &Rc<RefCell<Option<String>>>,
     selection_status: &gtk::Label,
 ) {
-    clear_device_signal_subscriptions(subscriptions);
+    valent::clear_device_signal_subscriptions(subscriptions);
 
     let window_weak = window.downgrade();
     let status = status.clone();
@@ -126,7 +116,7 @@ fn install_device_signal_subscriptions(
     let subscriptions_for_refresh = subscriptions.clone();
     let selected_device_for_refresh = selected_device.clone();
     let selection_status_for_refresh = selection_status.clone();
-    let refresh = Rc::new(move || {
+    let refresh: Rc<dyn Fn()> = Rc::new(move || {
         if let Some(window) = window_weak.upgrade() {
             refresh_valent_devices(
                 &window,
@@ -141,43 +131,7 @@ fn install_device_signal_subscriptions(
         }
     });
 
-    let properties_refresh = refresh.clone();
-    let properties_id = connection.signal_subscribe(
-        Some(VALENT_BUS_NAME),
-        Some("org.freedesktop.DBus.Properties"),
-        Some("PropertiesChanged"),
-        None,
-        Some(VALENT_DEVICE_INTERFACE),
-        gio::DBusSignalFlags::NONE,
-        move |_, _, _, _, _, _| properties_refresh(),
-    );
-
-    let added_refresh = refresh.clone();
-    let added_id = connection.signal_subscribe(
-        Some(VALENT_BUS_NAME),
-        Some(OBJECT_MANAGER_INTERFACE),
-        Some("InterfacesAdded"),
-        Some(VALENT_OBJECT_PATH),
-        None,
-        gio::DBusSignalFlags::NONE,
-        move |_, _, _, _, _, _| added_refresh(),
-    );
-
-    let removed_id = connection.signal_subscribe(
-        Some(VALENT_BUS_NAME),
-        Some(OBJECT_MANAGER_INTERFACE),
-        Some("InterfacesRemoved"),
-        Some(VALENT_OBJECT_PATH),
-        None,
-        gio::DBusSignalFlags::NONE,
-        move |_, _, _, _, _, _| refresh(),
-    );
-
-    *subscriptions.borrow_mut() = Some((connection.clone(), vec![
-        properties_id,
-        added_id,
-        removed_id,
-    ]));
+    valent::subscribe_device_changes(connection, refresh, subscriptions);
 }
 
 fn refresh_valent_devices(
@@ -206,10 +160,7 @@ fn refresh_valent_devices(
     let selection_status = selection_status.clone();
 
     let bus_cancellable = cancellable.clone();
-    gio::bus_get(
-        gio::BusType::Session,
-        Some(&bus_cancellable),
-        move |connection_result| {
+    valent::connect_session_bus(&bus_cancellable, move |connection_result| {
             if window_weak.upgrade().is_none()
                 || !is_current_refresh(&state_for_bus, request_id)
             {
@@ -310,8 +261,7 @@ fn refresh_valent_devices(
                         selection_status_for_call.set_text("No device selected.");
                     }
             });
-        },
-    );
+    });
 }
 
 fn make_label(text: &str, css_class: &str) -> gtk::Label {
@@ -442,7 +392,7 @@ fn build_ui(app: &adw::Application) {
         close_refresh(&state_for_close);
         clear_device_signal_subscriptions(&subscriptions_for_close);
         if let Some(watcher_id) = watcher_for_close_request.borrow_mut().take() {
-            gio::bus_unwatch_name(watcher_id);
+            valent::unwatch_name(watcher_id);
         }
         glib::Propagation::Proceed
     });
@@ -463,11 +413,8 @@ fn build_ui(app: &adw::Application) {
     let subscriptions_for_disappearance = device_signal_subscriptions.clone();
     let selected_device_for_disappearance = selected_device.clone();
     let selection_status_for_disappearance = selection_status.clone();
-    let watcher_id = gio::bus_watch_name(
-        gio::BusType::Session,
-        VALENT_BUS_NAME,
-        gio::BusNameWatcherFlags::NONE,
-        move |_, _, _| {
+    let watcher_id = valent::watch_name(
+        move || {
             refresh_valent_devices(
                 &window_for_appearance,
                 &status_for_appearance,
@@ -479,7 +426,7 @@ fn build_ui(app: &adw::Application) {
                 &selection_status_for_appearance,
             );
         },
-        move |_, _| {
+        move || {
             if window_for_watcher.upgrade().is_none() {
                 return;
             }
