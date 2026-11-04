@@ -2,69 +2,13 @@ mod backend;
 mod diagnostics;
 mod valent;
 
-use valent::{device_result_status, DeviceSignalSubscriptions};
-
 use adw::prelude::*;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
-use diagnostics::{DiagnosticLevel, DiagnosticEvent};
-
-
-#[derive(Default)]
-struct RefreshState {
-    request_id: u64,
-    cancellable: Option<gio::Cancellable>,
-    closed: bool,
-}
-
-fn begin_refresh(state: &Rc<RefCell<RefreshState>>) -> (u64, gio::Cancellable) {
-    let mut state = state.borrow_mut();
-    if let Some(previous) = state.cancellable.take() {
-        diagnostics::record(
-            DiagnosticLevel::Debug,
-            DiagnosticEvent::RefreshSuperseded,
-        );
-        previous.cancel();
-    }
-
-    state.request_id = state.request_id.wrapping_add(1);
-    let request_id = state.request_id;
-    let cancellable = gio::Cancellable::new();
-    state.cancellable = Some(cancellable.clone());
-    (request_id, cancellable)
-}
-
-fn is_current_refresh(state: &Rc<RefCell<RefreshState>>, request_id: u64) -> bool {
-    let state = state.borrow();
-    !state.closed && state.request_id == request_id
-}
-
-fn finish_refresh(state: &Rc<RefCell<RefreshState>>, request_id: u64) -> bool {
-    let mut state = state.borrow_mut();
-    if state.closed || state.request_id != request_id {
-        return false;
-    }
-
-    state.cancellable = None;
-    true
-}
-
-fn invalidate_refresh(state: &Rc<RefCell<RefreshState>>) {
-    let mut state = state.borrow_mut();
-    state.request_id = state.request_id.wrapping_add(1);
-    if let Some(cancellable) = state.cancellable.take() {
-        cancellable.cancel();
-    }
-}
-
-fn close_refresh(state: &Rc<RefCell<RefreshState>>) {
-    let mut state = state.borrow_mut();
-    state.closed = true;
-    state.request_id = state.request_id.wrapping_add(1);
-    if let Some(cancellable) = state.cancellable.take() {
-        cancellable.cancel();
-    }
-}
+use std::sync::mpsc::{self, TryRecvError};
+use std::time::Duration;
+use diagnostics::{DiagnosticEvent, DiagnosticLevel};
 
 fn prune_selected_device(
     selected_device: &Rc<RefCell<Option<String>>>,
@@ -95,178 +39,74 @@ fn clear_device_list(device_list: &gtk::Box) {
     }
 }
 
-fn install_device_signal_subscriptions(
-    connection: &gio::DBusConnection,
-    window: &adw::ApplicationWindow,
-    status: &gtk::Label,
-    device_list: &gtk::Box,
-    refresh_button: &gtk::Button,
-    state: &Rc<RefCell<RefreshState>>,
-    subscriptions: &DeviceSignalSubscriptions,
-    selected_device: &Rc<RefCell<Option<String>>>,
-    selection_status: &gtk::Label,
-) {
-    valent::clear_device_signal_subscriptions(subscriptions);
-
-    let window_weak = window.downgrade();
-    let status = status.clone();
-    let device_list = device_list.clone();
-    let refresh_button = refresh_button.clone();
-    let state = state.clone();
-    let subscriptions_for_refresh = subscriptions.clone();
-    let selected_device_for_refresh = selected_device.clone();
-    let selection_status_for_refresh = selection_status.clone();
-    let refresh: Rc<dyn Fn()> = Rc::new(move || {
-        if let Some(window) = window_weak.upgrade() {
-            refresh_valent_devices(
-                &window,
-                &status,
-                &device_list,
-                &refresh_button,
-                &state,
-                &subscriptions_for_refresh,
-                &selected_device_for_refresh,
-                &selection_status_for_refresh,
-            );
-        }
-    });
-
-    valent::subscribe_device_changes(connection, refresh, subscriptions);
+fn connection_label(device: &backend::Device) -> &'static str {
+    if device.reachable {
+        "Connected"
+    } else if device.paired {
+        "Paired · offline"
+    } else {
+        "Not connected"
+    }
 }
 
-fn refresh_valent_devices(
-    window: &adw::ApplicationWindow,
-    status: &gtk::Label,
+fn render_device_list(
     device_list: &gtk::Box,
-    refresh_button: &gtk::Button,
-    state: &Rc<RefCell<RefreshState>>,
-    subscriptions: &DeviceSignalSubscriptions,
+    known_devices: &HashMap<backend::DeviceId, backend::Device>,
     selected_device: &Rc<RefCell<Option<String>>>,
     selection_status: &gtk::Label,
 ) {
-    let (request_id, cancellable) = begin_refresh(state);
-    diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
-    status.set_text("Refreshing devices…");
-    refresh_button.set_sensitive(false);
     clear_device_list(device_list);
+    let mut devices = known_devices.values().cloned().collect::<Vec<_>>();
+    devices.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
 
-    let window_weak = window.downgrade();
-    let status_for_bus = status.clone();
-    let list_for_bus = device_list.clone();
-    let button_for_bus = refresh_button.clone();
-    let state_for_bus = state.clone();
-    let subscriptions = subscriptions.clone();
-    let selected_device = selected_device.clone();
-    let selection_status = selection_status.clone();
+    match prune_selected_device(selected_device, &devices) {
+        Some(name) => selection_status.set_text(&format!("Selected destination: {name}")),
+        None => selection_status.set_text("No device selected."),
+    }
 
-    let bus_cancellable = cancellable.clone();
-    valent::connect_session_bus(&bus_cancellable, move |connection_result| {
-            if window_weak.upgrade().is_none()
-                || !is_current_refresh(&state_for_bus, request_id)
-            {
-                return;
-            }
+    for device in devices {
+        let card = make_card(&device.name, connection_label(&device));
+        let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let icon_name = match device.device_type {
+            backend::DeviceType::Phone => "phone-symbolic",
+            backend::DeviceType::Tablet => "tablet-symbolic",
+            backend::DeviceType::Computer | backend::DeviceType::Unknown => "computer-symbolic",
+        };
+        let icon = gtk::Image::from_icon_name(icon_name);
+        icon.set_pixel_size(32);
+        row_content.append(&icon);
+        row_content.append(&card);
 
-            let connection = match connection_result {
-                Ok(connection) => connection,
-                Err(_) => {
-                    diagnostics::record(
-                        DiagnosticLevel::Error,
-                        DiagnosticEvent::SessionBusUnavailable,
-                    );
-                    if finish_refresh(&state_for_bus, request_id) {
-                        clear_selected_device(&selected_device);
-                        selection_status.set_text("No device selected.");
-                        status_for_bus.set_text(
-                            "Could not connect to the session bus. Check that your GNOME session is running, then refresh.",
-                        );
-                        button_for_bus.set_sensitive(true);
-                    }
-                    return;
-                }
-            };
+        let row = gtk::Button::new();
+        row.add_css_class("flat");
+        row.set_hexpand(true);
+        row.set_child(Some(&row_content));
+        let selected = selected_device.clone();
+        let selection_status = selection_status.clone();
+        let device_id = device.id.0.clone();
+        let device_name = device.name.clone();
+        row.connect_clicked(move |_| {
+            *selected.borrow_mut() = Some(device_id.clone());
+            selection_status.set_text(&format!("Selected destination: {device_name}"));
+        });
+        device_list.append(&row);
+    }
+}
 
-            install_device_signal_subscriptions(
-                &connection,
-                &window_weak.upgrade().expect("window was checked above"),
-                &status_for_bus,
-                &list_for_bus,
-                &button_for_bus,
-                &state_for_bus,
-                &subscriptions,
-                &selected_device,
-                &selection_status,
-            );
-
-            let state_for_call = state_for_bus.clone();
-            let window_for_call = window_weak.clone();
-            let status_for_call = status_for_bus.clone();
-            let list_for_call = list_for_bus.clone();
-            let button_for_call = button_for_bus.clone();
-            let selected_device_for_call = selected_device.clone();
-            let selection_status_for_call = selection_status.clone();
-
-            valent::query_devices(&connection, &cancellable, move |result| {
-
-                    if window_for_call.upgrade().is_none()
-                        || !finish_refresh(&state_for_call, request_id)
-                    {
-                        return;
-                    }
-
-                    button_for_call.set_sensitive(true);
-                    let result = result;
-                    status_for_call.set_text(&device_result_status(&result));
-
-                    match &result {
-                        Ok(devices) => diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::DiscoveryCompleted { device_count: devices.len() }),
-                        Err(_) => diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendDiscoveryFailed),
-                    }
-
-                    if let Ok(valent_devices) = result {
-                        let devices = valent_devices
-                            .iter()
-                            .map(valent::to_backend_device)
-                            .collect::<Vec<_>>();
-                        match prune_selected_device(&selected_device_for_call, &devices) {
-                            Some(name) => selection_status_for_call
-                                .set_text(&format!("Selected destination: {name}")),
-                            None => selection_status_for_call.set_text("No device selected."),
-                        }
-                        for device in devices {
-                            let connection_label = if device.reachable {
-                                "Connected"
-                            } else if device.paired {
-                                "Paired · offline"
-                            } else {
-                                "Not connected"
-                            };
-                            let card = make_card(&device.name, connection_label);
-                            let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-                            let icon = gtk::Image::from_icon_name("computer-symbolic");
-                            icon.set_pixel_size(32);
-                            row_content.append(&icon);
-                            row_content.append(&card);
-
-                            let row = gtk::Button::new();
-                            row.add_css_class("flat");
-                            row.set_hexpand(true);
-                            row.set_child(Some(&row_content));
-                            let selected = selected_device_for_call.clone();
-                            let selection_status = selection_status_for_call.clone();
-                            let device_id = device.id.0.clone();
-                            let device_name = device.name.clone();
-                            row.connect_clicked(move |_| {
-                                *selected.borrow_mut() = Some(device_id.clone());
-                                selection_status.set_text(&format!("Selected destination: {device_name}"));
-                            });
-                            list_for_call.append(&row);
-                        }
-                    } else {
-                        clear_selected_device(&selected_device_for_call);
-                        selection_status_for_call.set_text("No device selected.");
-                    }
-            });
+fn start_backend(
+    backend: Rc<RefCell<Box<dyn backend::SharingBackend>>>,
+    events: std::sync::mpsc::Sender<backend::BackendEvent>,
+    refresh_button: gtk::Button,
+) {
+    diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
+    glib::MainContext::default().spawn_local(async move {
+        let mut backend = backend.borrow_mut();
+        let result = backend.start(events).await;
+        drop(backend);
+        refresh_button.set_sensitive(true);
+        if result.is_err() {
+            diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendDiscoveryFailed);
+        }
     });
 }
 
@@ -363,7 +203,12 @@ fn build_ui(app: &adw::Application) {
         .default_height(700)
         .build();
 
-    let backend_snapshot = valent::backend_snapshot(backend::BackendState::Stopped);
+    let backend: Rc<RefCell<Box<dyn backend::SharingBackend>>> =
+        Rc::new(RefCell::new(valent::create_backend()));
+    let backend_snapshot = backend.borrow().snapshot();
+    let (event_sender, event_receiver) = mpsc::channel::<backend::BackendEvent>();
+    let known_devices: Rc<RefCell<HashMap<backend::DeviceId, backend::Device>>> =
+        Rc::new(RefCell::new(HashMap::new()));
 
     let header = adw::HeaderBar::new();
     let app_title = gtk::Label::new(Some("Viloja"));
@@ -382,15 +227,13 @@ fn build_ui(app: &adw::Application) {
 
     let nearby = make_page(
         "Nearby",
-        "Find devices known to Valent, the GNOME implementation of KDE Connect.",
+        "Find devices known to the active sharing backend.",
     );
-    let discovery_status = make_label(
-        "Use Refresh to query Valent over the session D-Bus.",
-        "",
-    );
+    let discovery_status = make_label("Starting device discovery…", "");
     let refresh_button = gtk::Button::with_label("Refresh devices");
     refresh_button.add_css_class("suggested-action");
     refresh_button.set_halign(gtk::Align::Start);
+    refresh_button.set_sensitive(false);
     let device_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
     let selected_device: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
     let selection_status = make_label("No device selected.", "dim-label");
@@ -401,88 +244,143 @@ fn build_ui(app: &adw::Application) {
     nearby.append(&backend_limitations_card());
     nearby.append(&backend_capabilities_card(&backend_snapshot));
 
-    let refresh_state = Rc::new(RefCell::new(RefreshState::default()));
-    let device_signal_subscriptions: DeviceSignalSubscriptions = Rc::new(RefCell::new(None));
-    let window_for_refresh = window.clone();
-    let status_for_refresh = discovery_status.clone();
-    let list_for_refresh = device_list.clone();
+    let backend_for_refresh = backend.clone();
+    let events_for_refresh = event_sender.clone();
     let button_for_refresh = refresh_button.clone();
-    let state_for_refresh = refresh_state.clone();
-    let subscriptions_for_refresh = device_signal_subscriptions.clone();
-    let selected_device_for_refresh = selected_device.clone();
-    let selection_status_for_refresh = selection_status.clone();
+    let devices_for_refresh = known_devices.clone();
+    let list_for_refresh = device_list.clone();
+    let selected_for_refresh = selected_device.clone();
+    let selection_for_refresh = selection_status.clone();
+    let status_for_refresh = discovery_status.clone();
     refresh_button.connect_clicked(move |_| {
-        refresh_valent_devices(
-            &window_for_refresh,
-            &status_for_refresh,
-            &list_for_refresh,
-            &button_for_refresh,
-            &state_for_refresh,
-            &subscriptions_for_refresh,
-            &selected_device_for_refresh,
-            &selection_status_for_refresh,
+        devices_for_refresh.borrow_mut().clear();
+        clear_device_list(&list_for_refresh);
+        clear_selected_device(&selected_for_refresh);
+        selection_for_refresh.set_text("No device selected.");
+        status_for_refresh.set_text("Refreshing devices…");
+        button_for_refresh.set_sensitive(false);
+        start_backend(
+            backend_for_refresh.clone(),
+            events_for_refresh.clone(),
+            button_for_refresh.clone(),
         );
     });
 
-    let state_for_close = refresh_state.clone();
-    let subscriptions_for_close = device_signal_subscriptions.clone();
-    let watcher_for_close = Rc::new(RefCell::new(None));
-    let watcher_for_close_request = watcher_for_close.clone();
-    window.connect_close_request(move |_| {
-        close_refresh(&state_for_close);
-        valent::clear_device_signal_subscriptions(&subscriptions_for_close);
-        if let Some(watcher_id) = watcher_for_close_request.borrow_mut().take() {
-            valent::unwatch_name(watcher_id);
+    let receiver = event_receiver;
+    let devices_for_events = known_devices.clone();
+    let list_for_events = device_list.clone();
+    let selected_for_events = selected_device.clone();
+    let selection_for_events = selection_status.clone();
+    let status_for_events = discovery_status.clone();
+    glib::timeout_add_local(Duration::from_millis(50), move || {
+        loop {
+            let event = match receiver.try_recv() {
+                Ok(event) => event,
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return glib::ControlFlow::Break,
+            };
+
+            match event {
+                backend::BackendEvent::StateChanged(state) => match state {
+                    backend::BackendState::Starting => {
+                        status_for_events.set_text("Connecting to the sharing backend…");
+                    }
+                    backend::BackendState::Running => {
+                        let count = devices_for_events.borrow().len();
+                        if count == 0 {
+                            status_for_events.set_text(
+                                "The backend is available, but it has no known devices yet.",
+                            );
+                        } else {
+                            status_for_events.set_text(&format!(
+                                "Found {count} device{}.",
+                                if count == 1 { "" } else { "s" }
+                            ));
+                        }
+                    }
+                    backend::BackendState::Unavailable { .. }
+                    | backend::BackendState::Failed { .. } => {
+                        devices_for_events.borrow_mut().clear();
+                        clear_selected_device(&selected_for_events);
+                        render_device_list(
+                            &list_for_events,
+                            &devices_for_events.borrow(),
+                            &selected_for_events,
+                            &selection_for_events,
+                        );
+                        status_for_events.set_text(
+                            "Valent is unavailable. Start Valent to restore discovery; Viloja will retry when it appears.",
+                        );
+                        diagnostics::record(
+                            DiagnosticLevel::Error,
+                            DiagnosticEvent::BackendUnavailable,
+                        );
+                    }
+                    backend::BackendState::Stopped => {
+                        status_for_events.set_text("Device discovery is stopped.");
+                    }
+                    backend::BackendState::Stopping => {
+                        status_for_events.set_text("Stopping device discovery…");
+                    }
+                },
+                backend::BackendEvent::DeviceDiscovered(device) => {
+                    devices_for_events
+                        .borrow_mut()
+                        .insert(device.id.clone(), device);
+                    let devices = devices_for_events.borrow();
+                    let count = devices.len();
+                    render_device_list(
+                        &list_for_events,
+                        &devices,
+                        &selected_for_events,
+                        &selection_for_events,
+                    );
+                    status_for_events.set_text(&format!(
+                        "Found {count} device{}.",
+                        if count == 1 { "" } else { "s" }
+                    ));
+                    diagnostics::record(
+                        DiagnosticLevel::Info,
+                        DiagnosticEvent::DiscoveryCompleted { device_count: count },
+                    );
+                }
+                backend::BackendEvent::DeviceUpdated(device) => {
+                    devices_for_events
+                        .borrow_mut()
+                        .insert(device.id.clone(), device);
+                    let devices = devices_for_events.borrow();
+                    render_device_list(
+                        &list_for_events,
+                        &devices,
+                        &selected_for_events,
+                        &selection_for_events,
+                    );
+                }
+                backend::BackendEvent::DeviceLost(device_id) => {
+                    devices_for_events.borrow_mut().remove(&device_id);
+                    render_device_list(
+                        &list_for_events,
+                        &devices_for_events.borrow(),
+                        &selected_for_events,
+                        &selection_for_events,
+                    );
+                }
+                backend::BackendEvent::IncomingTransfer(_)
+                | backend::BackendEvent::TransferUpdated(_) => {}
+            }
         }
-        glib::Propagation::Proceed
+        glib::ControlFlow::Continue
     });
 
-    let window_for_watcher = window.downgrade();
-    let window_for_appearance = window.clone();
-    let status_for_appearance = discovery_status.clone();
-    let list_for_appearance = device_list.clone();
-    let button_for_appearance = refresh_button.clone();
-    let state_for_appearance = refresh_state.clone();
-    let subscriptions_for_appearance = device_signal_subscriptions.clone();
-    let selected_device_for_appearance = selected_device.clone();
-    let selection_status_for_appearance = selection_status.clone();
-    let status_for_disappearance = discovery_status.clone();
-    let list_for_disappearance = device_list.clone();
-    let button_for_disappearance = refresh_button.clone();
-    let state_for_disappearance = refresh_state.clone();
-    let subscriptions_for_disappearance = device_signal_subscriptions.clone();
-    let selected_device_for_disappearance = selected_device.clone();
-    let selection_status_for_disappearance = selection_status.clone();
-    let watcher_id = valent::watch_name(
-        move || {
-            refresh_valent_devices(
-                &window_for_appearance,
-                &status_for_appearance,
-                &list_for_appearance,
-                &button_for_appearance,
-                &state_for_appearance,
-                &subscriptions_for_appearance,
-                &selected_device_for_appearance,
-                &selection_status_for_appearance,
-            );
-        },
-        move || {
-            if window_for_watcher.upgrade().is_none() {
-                return;
-            }
-            invalidate_refresh(&state_for_disappearance);
-            valent::clear_device_signal_subscriptions(&subscriptions_for_disappearance);
-            clear_selected_device(&selected_device_for_disappearance);
-            selection_status_for_disappearance.set_text("No device selected.");
-            diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
-            clear_device_list(&list_for_disappearance);
-            status_for_disappearance.set_text(
-                "Valent is not running. Start Valent to restore device discovery; Viloja will retry automatically when it appears.",
-            );
-            button_for_disappearance.set_sensitive(true);
-        },
-    );
-    *watcher_for_close.borrow_mut() = Some(watcher_id);
+    let backend_for_close = backend.clone();
+    window.connect_close_request(move |_| {
+        let backend = backend_for_close.clone();
+        glib::MainContext::default().spawn_local(async move {
+            let mut backend = backend.borrow_mut();
+            let _ = backend.stop().await;
+        });
+        glib::Propagation::Proceed
+    });
 
     stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
 
@@ -491,7 +389,7 @@ fn build_ui(app: &adw::Application) {
         "Choose files to prepare a transfer. Viloja cannot send them yet.",
     );
     send.append(&backend_limitations_card());
-    let selection_status = make_label("No files selected.", "");
+    let send_selection_status = make_label("No files selected.", "");
     let choose_button = gtk::Button::with_label("Choose files…");
     choose_button.add_css_class("suggested-action");
     send.append(&make_card(
@@ -499,7 +397,7 @@ fn build_ui(app: &adw::Application) {
         "You can select multiple files and review the selection here. Nothing is sent by this prototype.",
     ));
     send.append(&choose_button);
-    send.append(&selection_status);
+    send.append(&send_selection_status);
     send.append(&make_label(
         "Transfer will remain disabled until a real device action is connected.",
         "dim-label",
@@ -617,7 +515,7 @@ fn build_ui(app: &adw::Application) {
     window.set_content(Some(&layout));
 
     let chooser_window = window.clone();
-    let status_label = selection_status.clone();
+    let status_label = send_selection_status.clone();
     choose_button.connect_clicked(move |_| {
         let chooser = gtk::FileChooserNative::new(
             Some("Choose files to prepare"),
@@ -645,6 +543,7 @@ fn build_ui(app: &adw::Application) {
         chooser.show();
     });
 
+    start_backend(backend.clone(), event_sender, refresh_button.clone());
     window.present();
 }
 
@@ -662,15 +561,6 @@ fn main() {
 mod tests {
     use super::*;
     use crate::valent::{parse_valent_devices, ValentDeviceInfo};
-
-    fn device(name: &str) -> ValentDeviceInfo {
-        ValentDeviceInfo {
-            id: format!("device-{name}"),
-            name: name.into(),
-            icon_name: String::new(),
-            state: 1,
-        }
-    }
 
     fn backend_device(name: &str) -> backend::Device {
         backend::Device {
@@ -717,33 +607,23 @@ mod tests {
     }
 
     #[test]
-    fn valent_connection_labels_cover_each_documented_state() {
-        assert_eq!(device("Connected").connection_label(), "Connected");
-        assert_eq!(
-            ValentDeviceInfo { state: 2, ..device("Paired") }.connection_label(),
-            "Paired · offline"
-        );
-        assert_eq!(
-            ValentDeviceInfo { state: 4, ..device("Incoming") }.connection_label(),
-            "Incoming pairing request"
-        );
-        assert_eq!(
-            ValentDeviceInfo { state: 8, ..device("Outgoing") }.connection_label(),
-            "Outgoing pairing request"
-        );
-        assert_eq!(
-            ValentDeviceInfo { state: 0, ..device("Unknown") }.connection_label(),
-            "Not connected"
-        );
+    fn backend_limitations_do_not_overstate_unverified_features() {
+        assert!(VALENT_LIMITATIONS.contains("not verified"));
+        assert!(VALENT_LIMITATIONS.contains("not implemented"));
+        assert!(VALENT_LIMITATIONS.contains("no support is claimed"));
     }
 
     #[test]
-    fn connected_state_takes_precedence_over_other_state_bits() {
-        assert_eq!(
-            ValentDeviceInfo { state: 1 | 2 | 4 | 8, ..device("Combined") }
-                .connection_label(),
-            "Connected"
-        );
+    fn capability_report_comes_from_the_shared_backend_snapshot() {
+        let snapshot = valent::backend_snapshot(backend::BackendState::Stopped);
+        let report = backend_capabilities_text(&snapshot);
+
+        assert!(report.contains("Discovery: experimental"));
+        assert!(report.contains("Pairing: unavailable in Viloja"));
+        assert!(report.contains("Send files: unavailable"));
+        assert!(report.contains("Receive files: unavailable"));
+        assert!(report.contains("Transfer cancellation: unavailable"));
+        assert!(report.contains("Router-free transfer: unknown"));
     }
 
     #[test]
@@ -825,97 +705,5 @@ mod tests {
             .find(|device| device.id == "valid-id")
             .expect("valid device should be retained");
         assert_eq!(valid.name, "Android phone");
-    }
-
-    #[test]
-    fn backend_limitations_do_not_overstate_unverified_features() {
-        assert!(VALENT_LIMITATIONS.contains("not verified"));
-        assert!(VALENT_LIMITATIONS.contains("not implemented"));
-        assert!(VALENT_LIMITATIONS.contains("no support is claimed"));
-    }
-
-    #[test]
-    fn capability_report_comes_from_the_shared_backend_snapshot() {
-        let snapshot = valent::backend_snapshot(backend::BackendState::Stopped);
-        let report = backend_capabilities_text(&snapshot);
-
-        assert!(report.contains("Discovery: experimental"));
-        assert!(report.contains("Pairing: unavailable in Viloja"));
-        assert!(report.contains("Send files: unavailable"));
-        assert!(report.contains("Receive files: unavailable"));
-        assert!(report.contains("Transfer cancellation: unavailable"));
-        assert!(report.contains("Router-free transfer: unknown"));
-    }
-
-    #[test]
-    fn refresh_status_distinguishes_empty_and_successful_results() {
-        assert!(device_result_status(&Ok(Vec::new())).contains("no known devices"));
-        assert_eq!(
-            device_result_status(&Ok(vec![device("Phone")])),
-            "Found 1 device through Valent."
-        );
-        assert_eq!(
-            device_result_status(&Ok(vec![device("Phone"), device("Laptop")])),
-            "Found 2 devices through Valent."
-        );
-    }
-
-    #[test]
-    fn refresh_status_uses_safe_messages_without_exposing_backend_details() {
-        let sensitive_detail = "service error at /home/sakib/private/device.sock token=secret";
-        let unavailable = device_result_status(&Err(sensitive_detail.into()));
-
-        assert!(unavailable.contains("Valent is unavailable"));
-        assert!(unavailable.contains("Install Valent"));
-        assert!(unavailable.contains("enable device discovery"));
-        assert!(!unavailable.contains("sakib"));
-        assert!(!unavailable.contains("private/device.sock"));
-        assert!(!unavailable.contains("secret"));
-
-        let timeout = device_result_status(&Err("D-Bus call timed out".into()));
-        assert!(timeout.contains("Valent is unavailable"));
-        assert!(!timeout.contains("D-Bus call timed out"));
-    }
-
-    #[test]
-    fn starting_a_new_refresh_cancels_and_invalidates_the_previous_one() {
-        let state = Rc::new(RefCell::new(RefreshState::default()));
-        let (first_id, first_cancellable) = begin_refresh(&state);
-        let (second_id, _) = begin_refresh(&state);
-
-        assert!(first_cancellable.is_cancelled());
-        assert!(second_id > first_id);
-        assert!(!is_current_refresh(&state, first_id));
-        assert!(is_current_refresh(&state, second_id));
-        assert!(!finish_refresh(&state, first_id));
-        assert!(finish_refresh(&state, second_id));
-    }
-
-    #[test]
-    fn backend_disappearance_invalidates_refresh_and_allows_recovery() {
-        let state = Rc::new(RefCell::new(RefreshState::default()));
-        let (stale_id, stale_cancellable) = begin_refresh(&state);
-
-        invalidate_refresh(&state);
-
-        assert!(stale_cancellable.is_cancelled());
-        assert!(!is_current_refresh(&state, stale_id));
-        assert!(!finish_refresh(&state, stale_id));
-
-        let (recovered_id, _) = begin_refresh(&state);
-        assert!(is_current_refresh(&state, recovered_id));
-        assert!(finish_refresh(&state, recovered_id));
-    }
-
-    #[test]
-    fn closing_the_window_cancels_and_invalidates_an_in_flight_refresh() {
-        let state = Rc::new(RefCell::new(RefreshState::default()));
-        let (request_id, cancellable) = begin_refresh(&state);
-
-        close_refresh(&state);
-
-        assert!(cancellable.is_cancelled());
-        assert!(!is_current_refresh(&state, request_id));
-        assert!(!finish_refresh(&state, request_id));
     }
 }

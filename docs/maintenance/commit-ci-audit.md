@@ -213,3 +213,21 @@ Reviewed commit `0deef819c6de7f21562debb59f3fa6377d288224` after the previous ch
 
 - Checkpoint: `0deef819c6de7f21562debb59f3fa6377d288224`
 - Unresolved red or pending entries in this reviewed range: none.
+
+
+### Incremental audit: 2026-11-04 (Valent shared adapter)
+
+Reviewed commits after checkpoint `0deef819c6de7f21562debb59f3fa6377d288224` through `5c1360941402e769ae99ae7a9010aed43cca49ad`.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `4556361708da56e39ebc5e7eaf39282699615853` | feat(valent): implement shared discovery backend adapter (#7) | red | [41876227590](https://github.com/SakibShahariar/Viloja/actions/runs/41876227590) | Cargo check found the D-Bus connection was moved into the refresh closure and then borrowed for signal subscription. |
+| `025f32b13859c991132d8fe36b22b528c322e591` | fix(valent): pass borrowed D-Bus reply type (#7) | red | [41876279265](https://github.com/SakibShahariar/Viloja/actions/runs/41876279265) | The reply type borrow was corrected, but the connection was still moved into the closure; the same E0382 remained. |
+| `5c1360941402e769ae99ae7a9010aed43cca49ad` | fix(valent): retain connection for signal subscriptions (#7) | green | [41876486509](https://github.com/SakibShahariar/Viloja/actions/runs/41876486509) | cargo check, cargo-deny, and all 45 Rust tests passed. The refresh closure now owns a cloned connection while the adapter retains the original for subscriptions. |
+
+#### Resolved CI regressions
+
+Both red runs were caused by the refresh closure taking ownership of the same connection later needed to register signal subscriptions. The final correction retains a separate cloned connection for the callback and borrows the original for subscription setup. The final run passed all checks and 45/45 tests.
+
+- Checkpoint: `5c1360941402e769ae99ae7a9010aed43cca49ad`
+- Unresolved red or pending entries in this reviewed range: none.

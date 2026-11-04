@@ -64,22 +64,6 @@ pub struct ValentDeviceInfo {
     pub state: u32,
 }
 
-impl ValentDeviceInfo {
-    pub fn connection_label(&self) -> &'static str {
-        if self.state & 1 != 0 {
-            "Connected"
-        } else if self.state & 2 != 0 {
-            "Paired · offline"
-        } else if self.state & 4 != 0 {
-            "Incoming pairing request"
-        } else if self.state & 8 != 0 {
-            "Outgoing pairing request"
-        } else {
-            "Not connected"
-        }
-    }
-}
-
 pub fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
     let managed_objects = reply.child_value(0);
     let mut devices = Vec::new();
@@ -161,21 +145,6 @@ pub fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
     devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     devices
 }
-
-pub fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> String {
-    match result {
-        Ok(devices) if devices.is_empty() => {
-            "Valent is available, but it has no known devices yet. Open Valent and make sure device discovery is enabled.".into()
-        }
-        Ok(devices) => format!(
-            "Found {} device{} through Valent.",
-            devices.len(),
-            if devices.len() == 1 { "" } else { "s" }
-        ),
-        Err(_) => "Valent is unavailable or its device manager cannot be reached. Install Valent if needed, start it, enable device discovery, then refresh.".into(),
-    }
-}
-
 
 /// Query Valent's ObjectManager and decode its current device objects.
 pub fn query_devices(
@@ -411,6 +380,10 @@ pub(crate) struct ValentBackend {
     watcher: Option<NameWatcher>,
     events: Option<Sender<BackendEvent>>,
     known_devices: Rc<RefCell<HashSet<DeviceId>>>,
+}
+
+pub(crate) fn create_backend() -> Box<dyn SharingBackend> {
+    Box::new(ValentBackend::new())
 }
 
 impl ValentBackend {
