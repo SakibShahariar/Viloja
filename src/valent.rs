@@ -426,6 +426,7 @@ impl ValentBackend {
         *self.state.borrow_mut() = state.clone();
         if let Some(events) = &self.events {
             let _ = events.send(BackendEvent::StateChanged(state));
+            let _ = events.send(BackendEvent::BackendSnapshotChanged(self.snapshot()));
         }
     }
 
