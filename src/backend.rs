@@ -26,6 +26,7 @@ pub struct Device {
     pub backend: BackendId,
     pub name: String,
     pub device_type: DeviceType,
+    pub pairing_state: PairingState,
     pub paired: bool,
     pub reachable: bool,
 }
@@ -406,7 +407,7 @@ mod tests {
                     name: "Test phone".into(),
                     device_type: DeviceType::Phone,
                     pairing_state: PairingState::Paired,
-                paired: true,
+                    paired: true,
                     reachable: true,
                 },
                 transfers: HashMap::new(),
