@@ -213,6 +213,35 @@ impl std::fmt::Display for BackendError {
 
 impl std::error::Error for BackendError {}
 
+/// Registry of backend snapshots presented by the application.
+///
+/// The registry is protocol-agnostic: adapters publish their current snapshots,
+/// and UI code can render every registered backend without knowing its type.
+#[derive(Debug, Clone, Default)]
+pub struct BackendRegistry {
+    snapshots: std::collections::HashMap<BackendId, BackendSnapshot>,
+}
+
+impl BackendRegistry {
+    pub fn register(&mut self, snapshot: BackendSnapshot) {
+        self.snapshots.insert(snapshot.id.clone(), snapshot);
+    }
+
+    pub fn update_state(&mut self, id: &BackendId, state: BackendState) -> bool {
+        let Some(snapshot) = self.snapshots.get_mut(id) else {
+            return false;
+        };
+        snapshot.state = state;
+        true
+    }
+
+    pub fn snapshots(&self) -> Vec<BackendSnapshot> {
+        let mut snapshots = self.snapshots.values().cloned().collect::<Vec<_>>();
+        snapshots.sort_by(|left, right| left.display_name.to_lowercase().cmp(&right.display_name.to_lowercase()));
+        snapshots
+    }
+}
+
 /// A backend operation future that may complete on the GTK main context.
 ///
 /// The boxed future keeps `SharingBackend` object-safe while allowing adapters
