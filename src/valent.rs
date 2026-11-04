@@ -224,11 +224,13 @@ pub(crate) fn subscribe_device_changes(
     *subscriptions.borrow_mut() = Some((connection.clone(), vec![properties_id, added_id, removed_id]));
 }
 
+pub(crate) struct NameWatcher(gio::dbus::WatcherId);
+
 pub(crate) fn watch_name(
     appeared: impl Fn() + 'static,
     vanished: impl Fn() + 'static,
-) -> gio::WatcherId {
-    gio::bus_watch_name(
+) -> NameWatcher {
+    NameWatcher(gio::bus_watch_name(
         gio::BusType::Session,
         VALENT_BUS_NAME,
         gio::BusNameWatcherFlags::NONE,
