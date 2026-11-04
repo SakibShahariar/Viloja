@@ -63,4 +63,4 @@ See [Architecture](docs/ARCHITECTURE.md), [Feasibility notes](docs/FEASIBILITY.m
 
 ## License
 
-The project license has **not been finalized yet**. See [LICENSE](LICENSE) for the current status. Do not assume the repository grants reuse or redistribution permissions until a license is selected and its full text is added.
+Viloja is licensed under the **GNU General Public License v3.0 or later** (`GPL-3.0-or-later`). See [LICENSE](LICENSE) for the complete license text.
