@@ -274,6 +274,7 @@ mod tests {
         transfers: HashMap<TransferId, TransferSnapshot>,
         next_transfer_id: u64,
         available: bool,
+        pairing_supported: bool,
     }
 
     impl ContractFakeBackend {
@@ -292,6 +293,7 @@ mod tests {
                 transfers: HashMap::new(),
                 next_transfer_id: 1,
                 available: true,
+                pairing_supported: true,
             }
         }
 
@@ -394,7 +396,7 @@ mod tests {
                     receive_files: true,
                     cancel_outgoing: true,
                     cancel_incoming: false,
-                    pairing: true,
+                    pairing: self.pairing_supported,
                     router_free_transfer: false,
                 },
             }
@@ -623,6 +625,17 @@ mod tests {
             receiver.try_recv(),
             Err(mpsc::TryRecvError::Disconnected)
         ));
+    }
+
+    #[test]
+    fn backend_contract_rejects_pairing_when_capability_is_disabled() {
+        let mut backend = ContractFakeBackend::new();
+        backend.pairing_supported = false;
+        let device_id = backend.device.id.clone();
+
+        assert!(backend.pair_device_now(&device_id).is_err());
+        assert!(backend.unpair_device_now(&device_id).is_err());
+        assert!(backend.device.paired);
     }
 
     #[test]
