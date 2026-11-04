@@ -4,6 +4,9 @@
 //! ObjectManager replies into displayable device records. GTK widgets stay in
 //! the application layer; this is an extraction step toward a full adapter.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub(crate) const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
 pub(crate) const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
 pub(crate) const VALENT_DEVICE_INTERFACE: &str = "ca.andyholmes.Valent.Device";

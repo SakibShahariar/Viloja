@@ -390,7 +390,7 @@ fn build_ui(app: &adw::Application) {
     let watcher_for_close_request = watcher_for_close.clone();
     window.connect_close_request(move |_| {
         close_refresh(&state_for_close);
-        clear_device_signal_subscriptions(&subscriptions_for_close);
+        valent::clear_device_signal_subscriptions(&subscriptions_for_close);
         if let Some(watcher_id) = watcher_for_close_request.borrow_mut().take() {
             valent::unwatch_name(watcher_id);
         }
