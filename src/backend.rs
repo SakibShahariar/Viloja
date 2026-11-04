@@ -166,6 +166,14 @@ pub type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 pub trait SharingBackend {
     fn id(&self) -> BackendId;
     fn snapshot(&self) -> BackendSnapshot;
+    fn pair_device<'a>(
+        &'a mut self,
+        device_id: &'a DeviceId,
+    ) -> BackendFuture<'a, Result<(), BackendError>>;
+    fn unpair_device<'a>(
+        &'a mut self,
+        device_id: &'a DeviceId,
+    ) -> BackendFuture<'a, Result<(), BackendError>>;
     fn start(
         &mut self,
         events: Sender<BackendEvent>,
@@ -339,6 +347,14 @@ mod tests {
             run_ready(self.stop())
         }
 
+        fn pair_device_now(&mut self, id: &DeviceId) -> Result<(), BackendError> {
+            run_ready(self.pair_device(id))
+        }
+
+        fn unpair_device_now(&mut self, id: &DeviceId) -> Result<(), BackendError> {
+            run_ready(self.unpair_device(id))
+        }
+
         fn send_files_now(&mut self, request: SendRequest) -> Result<TransferId, BackendError> {
             run_ready(self.send_files(request))
         }
@@ -382,6 +398,54 @@ mod tests {
                     router_free_transfer: false,
                 },
             }
+        }
+
+        fn pair_device<'a>(
+            &'a mut self,
+            device_id: &'a DeviceId,
+        ) -> BackendFuture<'a, Result<(), BackendError>> {
+            Box::pin(async move {
+                if !self.snapshot().capabilities.pairing {
+                    return Err(BackendError {
+                        backend: self.id(),
+                        message: "backend does not support pairing".into(),
+                    });
+                }
+                if &self.device.id != device_id {
+                    return Err(BackendError {
+                        backend: self.id(),
+                        message: "unknown device".into(),
+                    });
+                }
+
+                self.device.paired = true;
+                self.publish(BackendEvent::DeviceUpdated(self.device.clone()));
+                Ok(())
+            })
+        }
+
+        fn unpair_device<'a>(
+            &'a mut self,
+            device_id: &'a DeviceId,
+        ) -> BackendFuture<'a, Result<(), BackendError>> {
+            Box::pin(async move {
+                if !self.snapshot().capabilities.pairing {
+                    return Err(BackendError {
+                        backend: self.id(),
+                        message: "backend does not support unpairing".into(),
+                    });
+                }
+                if &self.device.id != device_id {
+                    return Err(BackendError {
+                        backend: self.id(),
+                        message: "unknown device".into(),
+                    });
+                }
+
+                self.device.paired = false;
+                self.publish(BackendEvent::DeviceUpdated(self.device.clone()));
+                Ok(())
+            })
         }
 
         fn start(
@@ -558,6 +622,34 @@ mod tests {
         assert!(matches!(
             receiver.try_recv(),
             Err(mpsc::TryRecvError::Disconnected)
+        ));
+    }
+
+    #[test]
+    fn backend_contract_covers_pairing_and_unpairing() {
+        let mut backend = ContractFakeBackend::new();
+        let receiver = backend.start_with_receiver();
+        let _ = receiver.recv();
+        let _ = receiver.recv();
+        let device_id = backend.device.id.clone();
+
+        backend.pair_device_now(&device_id).expect("pairing should succeed");
+        match receiver.recv().unwrap() {
+            BackendEvent::DeviceUpdated(device) => assert!(device.paired),
+            other => panic!("expected paired device update, received {other:?}"),
+        }
+
+        backend.unpair_device_now(&device_id).expect("unpairing should succeed");
+        match receiver.recv().unwrap() {
+            BackendEvent::DeviceUpdated(device) => assert!(!device.paired),
+            other => panic!("expected unpaired device update, received {other:?}"),
+        }
+
+        let unknown = DeviceId("unknown-device".into());
+        assert!(backend.pair_device_now(&unknown).is_err());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
         ));
     }
 

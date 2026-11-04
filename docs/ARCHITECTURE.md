@@ -21,7 +21,7 @@ The contract currently provides:
 - `BackendState` values for unavailable, stopped, starting, running, stopping, and failed states.
 - `BackendEvent` variants for backend state, device discovery/update/loss, incoming requests, and transfer updates.
 - `TransferSnapshot` with direction, lifecycle state, byte counts, and a bounded optional percentage.
-- `SharingBackend` operations for start/stop, outgoing requests, incoming decisions, and cancellation. Each operation returns an object-safe boxed future so adapters can await D-Bus, filesystem, or network work without blocking GTK; futures are not required to be `Send`, allowing main-context-bound GIO adapters.
+- `SharingBackend` operations for start/stop, pairing/unpairing, outgoing requests, incoming decisions, and cancellation. Each operation returns an object-safe boxed future so adapters can await D-Bus, filesystem, or network work without blocking GTK; futures are not required to be `Send`, allowing main-context-bound GIO adapters.
 
 ### Contract semantics
 
