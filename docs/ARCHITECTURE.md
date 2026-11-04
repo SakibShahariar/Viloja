@@ -23,6 +23,12 @@ The contract currently provides:
 - `TransferSnapshot` with direction, lifecycle state, byte counts, and a bounded optional percentage.
 - `SharingBackend` operations for start/stop, pairing/unpairing, outgoing requests, incoming decisions, and cancellation. Each operation returns an object-safe boxed future so adapters can await D-Bus, filesystem, or network work without blocking GTK; futures are not required to be `Send`, allowing main-context-bound GIO adapters.
 
+### Current Valent protocol boundary
+
+The current discovery prototype now keeps Valent-specific D-Bus identifiers, ObjectManager calls, device decoding, signal subscriptions, and service-name watching in `src/valent.rs`. The GTK application in `src/main.rs` still orchestrates discovery through those Valent-specific helpers; it does **not yet** consume the shared `SharingBackend` contract. This is an intermediate separation, not a completed backend adapter.
+
+Valent discovery is the only implemented capability. Pairing remains delegated to Valent and is not exposed through the current application contract adapter; sending, receiving, and cancellation remain unavailable. Do not advertise these actions until real backend operations and tests exist.
+
 ### Contract semantics
 
 - A backend must publish state changes and device/transfer events through the supplied event sender.

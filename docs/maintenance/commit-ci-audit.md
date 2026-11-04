@@ -24,10 +24,10 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `b8a41cf7c62d8e94fd6472447b5cde3cfc14364c`
+- Checkpoint SHA: `644f438425f87e3e0dd4682a983392e2a9fae215`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
-- Next session: review commits after this checkpoint, including the ledger and `AGENTS.md` setup commits; investigate any older red/pending commit specifically identified by the owner.
+- Next session: review commits after `644f438425f87e3e0dd4682a983392e2a9fae215`; carry unresolved red/pending entries forward.
 
 ## Initial baseline
 
@@ -144,3 +144,24 @@ The extraction is still incomplete: D-Bus session-bus acquisition, signal subscr
 
 - Checkpoint: `462e0968aea18e26b3cdfe9c86e101e11e2f0f15`
 - Unresolved red entries in this reviewed range: `30105f12936ecb9ff87a2e29c01ff1e191e59bbe` (corrected by `6007d22890d133237f0d574ea901a2993e892cab`).
+
+
+### Incremental audit: 2026-11-04 (Valent D-Bus boundary)
+
+Reviewed commits after checkpoint `462e0968aea18e26b3cdfe9c86e101e11e2f0f15` through `644f438425f87e3e0dd4682a983392e2a9fae215`.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `4719abf7da0b617f7fb3d7183591fd175a08ad16` | refactor(valent): isolate D-Bus discovery plumbing (#7) | red | [41853180871](https://github.com/SakibShahariar/Viloja/actions/runs/41853180871) | Unresolved signal-cleanup helper in GTK code and incorrect watcher-handle type. |
+| `22503fb859a2a7247e053a9ab779a41d0c74aa28` | fix(valent): route cleanup through adapter module (#7) | red | [41853355659](https://github.com/SakibShahariar/Viloja/actions/runs/41853355659) | Close-handler cleanup remained unresolved; watcher handle still used mismatched GIO types. |
+| `ce8ec8bed0d5a0c371f93d254dda565c40f807c3` | fix(valent): complete signal cleanup migration (#7) | red | [41853468384](https://github.com/SakibShahariar/Viloja/actions/runs/41853468384) | Cleanup/imports were corrected, but watcher-handle types still did not match GIO. |
+| `ecd3f4441fddef043060ea836f03c2d21449657d` | fix(valent): use the D-Bus watcher identifier type (#7) | red | [41853619669](https://github.com/SakibShahariar/Viloja/actions/runs/41853619669) | The watcher identifier is not publicly nameable through `gio::WatcherId`; unwatch and stored-handle types remained incompatible. |
+| `d9dd0ede63caa2e5e7ec1c549ac82d9651f2b453` | fix(valent): wrap the D-Bus watcher handle type (#7) | red | [41853959087](https://github.com/SakibShahariar/Viloja/actions/runs/41853959087) | First wrapper attempt had a mismatched closing delimiter and incomplete unwatch conversion. |
+| `5a199b187cd42218e1b29146b57c562b2eb8846b` | fix(valent): pass the wrapped watcher handle to GIO (#7) | red | [41854043568](https://github.com/SakibShahariar/Viloja/actions/runs/41854043568) | The underlying watcher type is inside a private GIO module and cannot be named by this crate. |
+| `644f438425f87e3e0dd4682a983392e2a9fae215` | fix(valent): hide the private GIO watcher handle (#7) | green | [41854318284](https://github.com/SakibShahariar/Viloja/actions/runs/41854318284) | Wrapped the opaque watcher ID in a one-shot unwatch closure; cargo check, cargo-deny, and all 38 Rust tests passed. |
+
+#### Resolved CI regressions
+
+All red entries in this range were regressions introduced during the D-Bus boundary extraction. The successive fixes corrected the GTK cleanup references, moved the watcher handle behind a closure so the private GIO type is never named, and closed the watcher through that wrapper. Commit `644f438425f87e3e0dd4682a983392e2a9fae215` is the final correction; its associated run completed successfully with 38/38 tests. No red result remains unresolved in this range.
+
+- Checkpoint: `644f438425f87e3e0dd4682a983392e2a9fae215`
