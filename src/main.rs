@@ -266,6 +266,7 @@ fn build_ui(app: &adw::Application) {
     let nearby_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
     render_backend_capabilities(&nearby_backend_cards, &backend_registry.borrow());
     nearby.append(&nearby_backend_cards);
+    let settings_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
 
     let backend_for_refresh = backend.clone();
     let events_for_refresh = event_sender.clone();
@@ -465,7 +466,6 @@ fn build_ui(app: &adw::Application) {
         "Backend availability and transfer preferences will be configurable when those integrations exist.",
     );
     settings.append(&backend_limitations_card());
-    let settings_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
     render_backend_capabilities(&settings_backend_cards, &backend_registry.borrow());
     settings.append(&settings_backend_cards);
     settings.append(&make_card(
