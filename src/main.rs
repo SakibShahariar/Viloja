@@ -708,4 +708,26 @@ mod tests {
             .expect("valid device should be retained");
         assert_eq!(valid.name, "Android phone");
     }
+
+    #[test]
+    fn connection_labels_preserve_each_shared_pairing_state() {
+        let mut device = backend_device("Phone");
+
+        device.pairing_state = backend::PairingState::Unpaired;
+        device.paired = false;
+        assert_eq!(connection_label(&device), "Not connected");
+
+        device.pairing_state = backend::PairingState::IncomingRequest;
+        assert_eq!(connection_label(&device), "Incoming pairing request");
+
+        device.pairing_state = backend::PairingState::OutgoingRequest;
+        assert_eq!(connection_label(&device), "Outgoing pairing request");
+
+        device.pairing_state = backend::PairingState::Paired;
+        device.reachable = true;
+        assert_eq!(connection_label(&device), "Connected");
+
+        device.reachable = false;
+        assert_eq!(connection_label(&device), "Paired · offline");
+    }
 }
