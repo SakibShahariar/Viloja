@@ -24,7 +24,7 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `cb43463328feb0706466308595391b6fc5f401b9`
+- Checkpoint SHA: `38f5edde4ac793923107b62a3c6db134ef500eea`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
 - Next session: review commits after this checkpoint, including the ledger and `AGENTS.md` setup commits; investigate any older red/pending commit specifically identified by the owner.
@@ -77,3 +77,13 @@ Reviewed the range after the previous checkpoint through `cb43463328feb070646630
 - Commit `30f2bf68642e5fa82f7b963fdbdc0a1c6800bac0`, run [41307310826](https://github.com/SakibShahariar/Viloja/actions/runs/41307310826): compilation used the wrong type for Gio signal subscription IDs. Commit `277f7be82a232fad20c6398c6c7496938b759803` corrected the stored type to `gio::SignalSubscriptionId`; run [41308393587](https://github.com/SakibShahariar/Viloja/actions/runs/41308393587) passed.
 
 Both failures were investigated from their job logs and their fixes were verified by later successful runs. No unresolved red or pending run remains in the reviewed range.
+
+
+### Async backend contract follow-up
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `95fefa4a6fd20a1d16c9426e7f000b69331beb6f` | feat(backend): expose object-safe async operations (#7) | red | [41836829073](https://github.com/SakibShahariar/Viloja/actions/runs/41836829073) | Initial patch contained a malformed duplicate function boundary; Rust reported an unexpected closing delimiter. |
+| `38f5edde4ac793923107b62a3c6db134ef500eea` | fix(backend): correct async contract test module (#7) | green | [41836990640](https://github.com/SakibShahariar/Viloja/actions/runs/41836990640) | Removed the malformed block and corrected the misplaced API documentation; cargo check, cargo-deny, and all 34 tests passed. |
+
+The next checkpoint remains `38f5edde4ac793923107b62a3c6db134ef500eea`; review newer commits and their final CI results in the next incremental audit.
