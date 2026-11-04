@@ -397,7 +397,7 @@ fn subscribe_backend_device_changes(
             }
         });
     });
-    subscribe_device_changes(connection.as_ref(), refresh, subscriptions);
+    subscribe_device_changes(&connection, refresh, subscriptions);
 }
 
 /// Concrete discovery adapter for Valent.
@@ -454,7 +454,7 @@ async fn query_devices_future(
             OBJECT_MANAGER_INTERFACE,
             "GetManagedObjects",
             None,
-            Some(reply_type),
+            Some(&reply_type),
             gio::DBusCallFlags::NONE,
             3000,
         )
