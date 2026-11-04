@@ -21,11 +21,12 @@ The contract currently provides:
 - `BackendState` values for unavailable, stopped, starting, running, stopping, and failed states.
 - `BackendEvent` variants for backend state, device discovery/update/loss, incoming requests, and transfer updates.
 - `TransferSnapshot` with direction, lifecycle state, byte counts, and a bounded optional percentage.
-- `SharingBackend` operations for start/stop, outgoing requests, incoming decisions, and cancellation.
+- `SharingBackend` operations for start/stop, outgoing requests, incoming decisions, and cancellation. Each operation returns an object-safe boxed future so adapters can await D-Bus, filesystem, or network work without blocking GTK; futures are not required to be `Send`, allowing main-context-bound GIO adapters.
 
 ### Contract semantics
 
 - A backend must publish state changes and device/transfer events through the supplied event sender.
+- Lifecycle and transfer operations are asynchronous. Dropping an unpolled or in-flight operation future is cancellation, not success; adapters should release or cancel their own in-progress resources when the future is dropped.
 - A successful send request returns a transfer identifier; it does not mean the transfer completed. Completion must arrive as a terminal transfer event.
 - Incoming requests begin in `AwaitingApproval`; the UI must obtain an explicit accept/reject decision before treating them as accepted.
 - Cancellation is backend-capability-dependent. Unsupported directions and terminal transfers must return an error without fabricating a cancelled state.
