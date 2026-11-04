@@ -152,25 +152,38 @@ impl std::fmt::Display for BackendError {
 
 impl std::error::Error for BackendError {}
 
-/// Contract implemented by each real sharing integration.
-///
-/// Adapters own protocol details and may run their networking on background
-/// tasks. They report lifecycle, device and transfer changes through the event
-/// sender. The UI must never infer success merely because a request was accepted.
 /// A backend operation future that may complete on the GTK main context.
 ///
 /// The boxed future keeps `SharingBackend` object-safe while allowing adapters
 /// to await D-Bus, filesystem, and network operations without blocking the UI.
 pub type BackendFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
+/// Contract implemented by each real sharing integration.
+///
+/// Adapters own protocol details and may run their networking on background
+/// tasks. They report lifecycle, device and transfer changes through the event
+/// sender. The UI must never infer success merely because a request was accepted.
 pub trait SharingBackend {
     fn id(&self) -> BackendId;
     fn snapshot(&self) -> BackendSnapshot;
-    fn start(&mut self, events: Sender<BackendEvent>) -> BackendFuture<'_, Result<(), BackendError>>;
+    fn start(
+        &mut self,
+        events: Sender<BackendEvent>,
+    ) -> BackendFuture<'_, Result<(), BackendError>>;
     fn stop(&mut self) -> BackendFuture<'_, Result<(), BackendError>>;
-    fn send_files(&mut self, request: SendRequest) -> BackendFuture<'_, Result<TransferId, BackendError>>;
-    fn decide_incoming<'a>(&'a mut self, transfer_id: &'a TransferId, decision: IncomingDecision) -> BackendFuture<'a, Result<(), BackendError>>;
-    fn cancel_transfer<'a>(&'a mut self, transfer_id: &'a TransferId) -> BackendFuture<'a, Result<(), BackendError>>;
+    fn send_files(
+        &mut self,
+        request: SendRequest,
+    ) -> BackendFuture<'_, Result<TransferId, BackendError>>;
+    fn decide_incoming<'a>(
+        &'a mut self,
+        transfer_id: &'a TransferId,
+        decision: IncomingDecision,
+    ) -> BackendFuture<'a, Result<(), BackendError>>;
+    fn cancel_transfer<'a>(
+        &'a mut self,
+        transfer_id: &'a TransferId,
+    ) -> BackendFuture<'a, Result<(), BackendError>>;
 }
 
 #[cfg(test)]
@@ -443,9 +456,6 @@ mod tests {
                 Ok(())
             })
         }
-    }
-
-    fn receive_transfer
     }
 
     fn receive_transfer(receiver: &Receiver<BackendEvent>) -> TransferSnapshot {
