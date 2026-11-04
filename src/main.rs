@@ -151,6 +151,14 @@ fn backend_limitations_card() -> gtk::Box {
 }
 
 fn backend_capabilities_text(snapshot: &backend::BackendSnapshot) -> String {
+    let availability = match snapshot.state {
+        backend::BackendState::Unavailable { .. } => "unavailable",
+        backend::BackendState::Stopped => "stopped",
+        backend::BackendState::Starting => "starting",
+        backend::BackendState::Running => "available",
+        backend::BackendState::Stopping => "stopping",
+        backend::BackendState::Failed { .. } => "failed",
+    };
     let capabilities = snapshot.capabilities;
     let discovery = if capabilities.discovery {
         "experimental"
@@ -176,7 +184,7 @@ fn backend_capabilities_text(snapshot: &backend::BackendSnapshot) -> String {
     };
 
     format!(
-        "Discovery: {discovery}. Pairing: {pairing}. Send files: {sending}. Receive files: {receiving}. Transfer cancellation: {cancellation}. Router-free transfer: {router_free}."
+        "Availability: {availability}. Discovery: {discovery}. Pairing: {pairing}. Send files: {sending}. Receive files: {receiving}. Transfer cancellation: {cancellation}. Router-free transfer: {router_free}."
     )
 }
 
@@ -287,6 +295,9 @@ fn build_ui(app: &adw::Application) {
     let selected_for_events = selected_device.clone();
     let selection_for_events = selection_status.clone();
     let status_for_events = discovery_status.clone();
+    let registry_for_events = backend_registry.clone();
+    let nearby_cards_for_events = nearby_backend_cards.clone();
+    let settings_cards_for_events = settings_backend_cards.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         loop {
             let event = match receiver.try_recv() {
@@ -296,7 +307,20 @@ fn build_ui(app: &adw::Application) {
             };
 
             match event {
-                backend::BackendEvent::StateChanged(state) => match state {
+                backend::BackendEvent::StateChanged(state) => {
+                    registry_for_events.borrow_mut().update_state(
+                        &backend::BackendId("valent".into()),
+                        state.clone(),
+                    );
+                    render_backend_capabilities(
+                        &nearby_cards_for_events,
+                        &registry_for_events.borrow(),
+                    );
+                    render_backend_capabilities(
+                        &settings_cards_for_events,
+                        &registry_for_events.borrow(),
+                    );
+                    match state {
                     backend::BackendState::Starting => {
                         status_for_events.set_text("Connecting to the sharing backend…");
                     }
@@ -336,6 +360,7 @@ fn build_ui(app: &adw::Application) {
                     }
                     backend::BackendState::Stopping => {
                         status_for_events.set_text("Stopping device discovery…");
+                    }
                     }
                 },
                 backend::BackendEvent::DeviceDiscovered(device) => {
@@ -637,6 +662,7 @@ mod tests {
         let snapshot = valent::backend_snapshot(backend::BackendState::Stopped);
         let report = backend_capabilities_text(&snapshot);
 
+        assert!(report.contains("Availability: stopped"));
         assert!(report.contains("Discovery: experimental"));
         assert!(report.contains("Pairing: unavailable in Viloja"));
         assert!(report.contains("Send files: unavailable"));
