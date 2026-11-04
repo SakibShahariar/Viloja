@@ -34,6 +34,19 @@ These instructions apply to the entire repository. Follow any more specific `AGE
 - After editing an issue description or state, fetch it again and confirm that the intended checklist and status were saved.
 
 
+## Acceptance Criteria Integrity
+
+Acceptance criteria must reflect reality. Each checkbox is a factual claim about the current implementation and verified behavior, never a statement of intent, progress, or planned work.
+
+- Inspect the relevant implementation, tests, documentation, and available CI/runtime evidence before changing an issue checklist. A commit title, merged change, or closed issue is not proof of completion.
+- Check a criterion only when its complete requirement is implemented and supported by concrete, reproducible evidence. Record concise evidence where useful, such as test names, source paths, CI runs, or manual validation notes.
+- Leave a criterion unchecked when it is incomplete, partially implemented, untested, or otherwise unverified. Do not mark it complete because the implementation merely appears plausible.
+- Distinguish implementation from validation. If required runtime, graphical, hardware, accessibility, performance, or user-environment validation has not happened, leave the relevant criterion unchecked and state what remains.
+- Do not weaken, reinterpret, or silently rewrite criteria to make work appear complete. If a criterion is ambiguous or needs the owner's decision, ask a specific question and keep it unresolved until clarified.
+- Before closing an issue, re-check every criterion against the current repository state and evidence. Update the checklist to match reality; close only when all required criteria are genuinely met.
+- When auditing previously closed issues, correct inaccurate checklists. Reopen an issue if required criteria remain unmet or unverified, and explain the evidence and remaining work. Do not reopen solely for optional improvements outside the agreed scope.
+- Never claim full issue completion while any required criterion remains unchecked. Report completed implementation and outstanding validation separately.
+
 ## Code Quality and Testing
 
 - Follow the repository's established formatting, naming, documentation, dependency, and error-handling conventions.
