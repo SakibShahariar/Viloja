@@ -1054,4 +1054,64 @@ mod tests {
         ));
         assert!(matches!(recovered.recv().unwrap(), BackendEvent::DeviceDiscovered(_)));
     }
+
+    #[test]
+    fn backend_registry_lists_all_registered_snapshots_in_name_order() {
+        let mut registry = BackendRegistry::default();
+        let capabilities = BackendCapabilities {
+            discovery: true,
+            send_files: false,
+            receive_files: false,
+            cancel_outgoing: false,
+            cancel_incoming: false,
+            pairing: false,
+            router_free_transfer: false,
+        };
+        registry.register(BackendSnapshot {
+            id: BackendId("zeta".into()),
+            display_name: "Zeta".into(),
+            state: BackendState::Unavailable {
+                reason: "not installed".into(),
+            },
+            capabilities,
+        });
+        registry.register(BackendSnapshot {
+            id: BackendId("alpha".into()),
+            display_name: "Alpha".into(),
+            state: BackendState::Running,
+            capabilities,
+        });
+
+        let snapshots = registry.snapshots();
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots[0].id, BackendId("alpha".into()));
+        assert_eq!(snapshots[1].id, BackendId("zeta".into()));
+    }
+
+    #[test]
+    fn backend_registry_updates_only_the_matching_backend_state() {
+        let mut registry = BackendRegistry::default();
+        let id = BackendId("valent".into());
+        registry.register(BackendSnapshot {
+            id: id.clone(),
+            display_name: "Valent".into(),
+            state: BackendState::Stopped,
+            capabilities: BackendCapabilities::default(),
+        });
+
+        assert!(registry.update_state(
+            &id,
+            BackendState::Unavailable {
+                reason: "service not found".into(),
+            }
+        ));
+        assert!(matches!(
+            registry.snapshots()[0].state,
+            BackendState::Unavailable { .. }
+        ));
+        assert!(!registry.update_state(
+            &BackendId("missing".into()),
+            BackendState::Running
+        ));
+    }
 }
