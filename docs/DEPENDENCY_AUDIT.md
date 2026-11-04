@@ -69,7 +69,7 @@ When changing dependencies, inspect the complete cargo-deny output. Do not add a
 
 ## Remaining gates
 
-- Select and add Viloja's own license before distribution.
+- Keep Viloja's own license notices and distribution materials consistent with `GPL-3.0-or-later`.
 - Commit a reviewed \`Cargo.lock\` before a reproducible release.
 - Obtain upstream clarification of GnomeQS's README/LICENSE mismatch before any GnomeQS use.
 - Reassess the license and security implications before adopting Valent, rquickshare, Packet, or another backend.
