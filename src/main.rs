@@ -183,9 +183,7 @@ fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> Strin
             devices.len(),
             if devices.len() == 1 { "" } else { "s" }
         ),
-        Err(error) => format!(
-            "Valent is unavailable or its device manager cannot be reached. Install Valent if needed, start it, enable device discovery, then refresh. Details: {error}"
-        ),
+        Err(_) => "Valent is unavailable or its device manager cannot be reached. Install Valent if needed, start it, enable device discovery, then refresh.".into(),
     }
 }
 
@@ -349,9 +347,9 @@ fn refresh_valent_devices(
                     if finish_refresh(&state_for_bus, request_id) {
                         clear_selected_device(&selected_device);
                         selection_status.set_text("No device selected.");
-                        status_for_bus.set_text(&format!(
-                            "Could not connect to the session bus: {error}"
-                        ));
+                        status_for_bus.set_text(
+                            "Could not connect to the session bus. Check that your GNOME session is running, then refresh.",
+                        );
                         button_for_bus.set_sensitive(true);
                     }
                     return;
@@ -400,10 +398,8 @@ fn refresh_valent_devices(
                     button_for_call.set_sensitive(true);
                     let result = reply_result
                         .map(|reply| parse_valent_devices(&reply))
-                        .map_err(|error| {
-                            format!(
-                                "Valent is unavailable or does not expose its device manager: {error}"
-                            )
+.map_err(|_| {
+                            "Valent is unavailable or does not expose its device manager.".to_owned()
                         });
                     status_for_call.set_text(&device_result_status(&result));
 
@@ -420,10 +416,6 @@ fn refresh_valent_devices(
                         }
                         for device in devices {
                             let card = make_card(&device.name, device.connection_label());
-                            card.set_tooltip_text(Some(&format!(
-                                "Valent device ID: {}",
-                                device.id
-                            )));
                             let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                             let icon_name = if device.icon_name.is_empty() {
                                 "computer-symbolic"
@@ -1004,16 +996,20 @@ mod tests {
     }
 
     #[test]
-    fn refresh_status_preserves_unavailable_and_timeout_errors() {
-        let unavailable = device_result_status(&Err("service has no owner".into()));
+    fn refresh_status_uses_safe_messages_without_exposing_backend_details() {
+        let sensitive_detail = "service error at /home/sakib/private/device.sock token=secret";
+        let unavailable = device_result_status(&Err(sensitive_detail.into()));
+
         assert!(unavailable.contains("Valent is unavailable"));
         assert!(unavailable.contains("Install Valent"));
         assert!(unavailable.contains("enable device discovery"));
-        assert!(unavailable.contains("service has no owner"));
+        assert!(!unavailable.contains("sakib"));
+        assert!(!unavailable.contains("private/device.sock"));
+        assert!(!unavailable.contains("secret"));
 
         let timeout = device_result_status(&Err("D-Bus call timed out".into()));
         assert!(timeout.contains("Valent is unavailable"));
-        assert!(timeout.contains("D-Bus call timed out"));
+        assert!(!timeout.contains("D-Bus call timed out"));
     }
 
     #[test]

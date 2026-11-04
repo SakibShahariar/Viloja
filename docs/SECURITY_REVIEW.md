@@ -26,7 +26,7 @@ Pairing is managed in Valent, not by Viloja. The current source does not verify 
 
 ### 3. Session D-Bus discovery
 
-The application queries the session bus for a fixed Valent service name and ObjectManager path. It reads exported device properties and renders device names and connection state. Device IDs are currently included in a widget tooltip for diagnostics of the discovery UI. Treat those identifiers as potentially sensitive and do not copy them into diagnostic logs.
+The application queries the session bus for a fixed Valent service name and ObjectManager path. It reads exported device properties and renders device names and connection state. Device IDs are used internally for selection but are not displayed in the UI or copied into diagnostic logs.
 
 A missing service, failed session-bus connection, or failed discovery call is surfaced as an unavailable/error state. Automatic service appearance/disappearance recovery is implemented, but still requires runtime validation in a GNOME session.
 

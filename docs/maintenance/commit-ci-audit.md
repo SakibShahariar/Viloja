@@ -24,7 +24,7 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `f0ea148f90b602890d4a97940908c5142fe29f3f`
+- Checkpoint SHA: `3ab307e5a8cb3af776e4cff6bee00dae2251e6c0`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
 - Next session: review commits after this checkpoint, including the ledger and `AGENTS.md` setup commits; investigate any older red/pending commit specifically identified by the owner.
@@ -115,3 +115,8 @@ The next checkpoint remains `38f5edde4ac793923107b62a3c6db134ef500eea`; review n
 | Commit SHA | Subject | CI result | Workflow run | Notes |
 |---|---|---|---|---|
 | `f0ea148f90b602890d4a97940908c5142fe29f3f` | test(backend): cover all safe error categories (#18) | green | [41839812449](https://github.com/SakibShahariar/Viloja/actions/runs/41839812449) | cargo check, cargo-deny, and all 38 Rust tests passed; verified fixed user messages do not expose raw details. |
+
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `3ab307e5a8cb3af776e4cff6bee00dae2251e6c0` | docs(security): record typed backend error privacy boundary (#18) | green | [41840304968](https://github.com/SakibShahariar/Viloja/actions/runs/41840304968) | cargo check, cargo-deny, and all 38 Rust tests passed. |
