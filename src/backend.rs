@@ -31,6 +31,14 @@ pub struct Device {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PairingState {
+    Unpaired,
+    Paired,
+    IncomingRequest,
+    OutgoingRequest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeviceType {
     Phone,
     Computer,
@@ -276,6 +284,7 @@ mod tests {
                 backend: BackendId("test-backend".into()),
                 name: "Test device".into(),
                 device_type: DeviceType::Phone,
+                pairing_state: PairingState::Paired,
                 paired: true,
                 reachable: true,
             },
@@ -396,7 +405,8 @@ mod tests {
                     backend: BackendId("fake".into()),
                     name: "Test phone".into(),
                     device_type: DeviceType::Phone,
-                    paired: true,
+                    pairing_state: PairingState::Paired,
+                paired: true,
                     reachable: true,
                 },
                 transfers: HashMap::new(),

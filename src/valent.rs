@@ -9,8 +9,8 @@ use std::rc::Rc;
 
 use crate::backend::{
     BackendCapabilities, BackendError, BackendErrorKind, BackendEvent, BackendFuture, BackendId,
-    BackendSnapshot, BackendState, Device, DeviceId, DeviceType, IncomingDecision, SendRequest,
-    SharingBackend, TransferId,
+    BackendSnapshot, BackendState, Device, DeviceId, DeviceType, IncomingDecision, PairingState,
+    SendRequest, SharingBackend, TransferId,
 };
 use std::collections::HashSet;
 use std::sync::mpsc::Sender;
@@ -45,12 +45,22 @@ pub(crate) fn backend_snapshot(state: BackendState) -> BackendSnapshot {
 pub(crate) fn to_backend_device(device: &ValentDeviceInfo) -> Device {
     let connected = device.state & 1 != 0;
     let paired = device.state & (1 | 2) != 0;
+    let pairing_state = if paired {
+        PairingState::Paired
+    } else if device.state & 4 != 0 {
+        PairingState::IncomingRequest
+    } else if device.state & 8 != 0 {
+        PairingState::OutgoingRequest
+    } else {
+        PairingState::Unpaired
+    };
 
     Device {
         id: DeviceId(device.id.clone()),
         backend: BackendId(BACKEND_ID.into()),
         name: device.name.clone(),
         device_type: DeviceType::Unknown,
+        pairing_state,
         paired,
         reachable: connected,
     }
@@ -298,6 +308,20 @@ mod backend_contract_tests {
 
         assert!(!device.paired);
         assert!(!device.reachable);
+    }
+
+    #[test]
+    fn pairing_request_states_survive_shared_device_conversion() {
+        let incoming = to_backend_device(&info(4));
+        let outgoing = to_backend_device(&info(8));
+        let connected_with_request_bits = to_backend_device(&info(1 | 4 | 8));
+
+        assert_eq!(incoming.pairing_state, PairingState::IncomingRequest);
+        assert_eq!(outgoing.pairing_state, PairingState::OutgoingRequest);
+        assert_eq!(
+            connected_with_request_bits.pairing_state,
+            PairingState::Paired
+        );
     }
 
     #[test]

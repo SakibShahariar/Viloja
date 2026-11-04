@@ -40,12 +40,12 @@ fn clear_device_list(device_list: &gtk::Box) {
 }
 
 fn connection_label(device: &backend::Device) -> &'static str {
-    if device.reachable {
-        "Connected"
-    } else if device.paired {
-        "Paired · offline"
-    } else {
-        "Not connected"
+    match device.pairing_state {
+        backend::PairingState::IncomingRequest => "Incoming pairing request",
+        backend::PairingState::OutgoingRequest => "Outgoing pairing request",
+        backend::PairingState::Paired if device.reachable => "Connected",
+        backend::PairingState::Paired => "Paired · offline",
+        backend::PairingState::Unpaired => "Not connected",
     }
 }
 
@@ -376,8 +376,9 @@ fn build_ui(app: &adw::Application) {
     window.connect_close_request(move |_| {
         let backend = backend_for_close.clone();
         glib::MainContext::default().spawn_local(async move {
-            let mut backend = backend.borrow_mut();
-            let _ = backend.stop().await;
+            if let Ok(mut backend) = backend.try_borrow_mut() {
+                let _ = backend.stop().await;
+            }
         });
         glib::Propagation::Proceed
     });
@@ -568,6 +569,7 @@ mod tests {
             backend: backend::BackendId("valent".into()),
             name: name.into(),
             device_type: backend::DeviceType::Unknown,
+            pairing_state: backend::PairingState::Paired,
             paired: true,
             reachable: true,
         }
