@@ -2,7 +2,7 @@ mod backend;
 mod diagnostics;
 mod valent;
 
-use valent::{device_result_status, DeviceSignalSubscriptions, ValentDeviceInfo};
+use valent::{device_result_status, DeviceSignalSubscriptions};
 
 use adw::prelude::*;
 use std::cell::RefCell;
@@ -68,13 +68,13 @@ fn close_refresh(state: &Rc<RefCell<RefreshState>>) {
 
 fn prune_selected_device(
     selected_device: &Rc<RefCell<Option<String>>>,
-    devices: &[ValentDeviceInfo],
+    devices: &[backend::Device],
 ) -> Option<String> {
     let mut selected = selected_device.borrow_mut();
     let selected_name = selected.as_ref().and_then(|id| {
         devices
             .iter()
-            .find(|device| &device.id == id)
+            .find(|device| &device.id.0 == id)
             .map(|device| device.name.clone())
     });
 
@@ -223,21 +223,27 @@ fn refresh_valent_devices(
                         Err(_) => diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendDiscoveryFailed),
                     }
 
-                    if let Ok(devices) = result {
+                    if let Ok(valent_devices) = result {
+                        let devices = valent_devices
+                            .iter()
+                            .map(valent::to_backend_device)
+                            .collect::<Vec<_>>();
                         match prune_selected_device(&selected_device_for_call, &devices) {
                             Some(name) => selection_status_for_call
                                 .set_text(&format!("Selected destination: {name}")),
                             None => selection_status_for_call.set_text("No device selected."),
                         }
                         for device in devices {
-                            let card = make_card(&device.name, device.connection_label());
-                            let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-                            let icon_name = if device.icon_name.is_empty() {
-                                "computer-symbolic"
+                            let connection_label = if device.reachable {
+                                "Connected"
+                            } else if device.paired {
+                                "Paired · offline"
                             } else {
-                                &device.icon_name
+                                "Not connected"
                             };
-                            let icon = gtk::Image::from_icon_name(icon_name);
+                            let card = make_card(&device.name, connection_label);
+                            let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                            let icon = gtk::Image::from_icon_name("computer-symbolic");
                             icon.set_pixel_size(32);
                             row_content.append(&icon);
                             row_content.append(&card);
@@ -248,7 +254,7 @@ fn refresh_valent_devices(
                             row.set_child(Some(&row_content));
                             let selected = selected_device_for_call.clone();
                             let selection_status = selection_status_for_call.clone();
-                            let device_id = device.id.clone();
+                            let device_id = device.id.0.clone();
                             let device_name = device.name.clone();
                             row.connect_clicked(move |_| {
                                 *selected.borrow_mut() = Some(device_id.clone());
@@ -621,7 +627,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::valent::parse_valent_devices;
+    use crate::valent::{parse_valent_devices, ValentDeviceInfo};
 
     fn device(name: &str) -> ValentDeviceInfo {
         ValentDeviceInfo {
@@ -632,20 +638,31 @@ mod tests {
         }
     }
 
+    fn backend_device(name: &str) -> backend::Device {
+        backend::Device {
+            id: backend::DeviceId(format!("device-{name}")),
+            backend: backend::BackendId("valent".into()),
+            name: name.into(),
+            device_type: backend::DeviceType::Unknown,
+            paired: true,
+            reachable: true,
+        }
+    }
+
     #[test]
     fn selected_device_name_tracks_refreshes_and_selection_is_pruned_when_missing() {
         let selected = Rc::new(RefCell::new(Some("device-Phone".to_string())));
 
         assert_eq!(
-            prune_selected_device(&selected, &[device("Phone")]).as_deref(),
+            prune_selected_device(&selected, &[backend_device("Phone")]).as_deref(),
             Some("Phone")
         );
         assert_eq!(selected.borrow().as_deref(), Some("device-Phone"));
 
-        let renamed = ValentDeviceInfo {
-            id: "device-Phone".into(),
+        let renamed = backend::Device {
+            id: backend::DeviceId("device-Phone".into()),
             name: "Renamed phone".into(),
-            ..device("Phone")
+            ..backend_device("Phone")
         };
         assert_eq!(
             prune_selected_device(&selected, &[renamed]).as_deref(),
@@ -653,7 +670,7 @@ mod tests {
         );
         assert_eq!(selected.borrow().as_deref(), Some("device-Phone"));
 
-        assert_eq!(prune_selected_device(&selected, &[device("Laptop")]), None);
+        assert_eq!(prune_selected_device(&selected, &[backend_device("Laptop")]), None);
         assert_eq!(selected.borrow().as_deref(), None);
     }
 
