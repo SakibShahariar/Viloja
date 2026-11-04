@@ -7,12 +7,52 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::backend::{
+    BackendCapabilities, BackendId, BackendSnapshot, BackendState, Device, DeviceId, DeviceType,
+};
+
 pub(crate) const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
 pub(crate) const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
 pub(crate) const VALENT_DEVICE_INTERFACE: &str = "ca.andyholmes.Valent.Device";
 pub(crate) const OBJECT_MANAGER_INTERFACE: &str = "org.freedesktop.DBus.ObjectManager";
 
 #[derive(Debug, Clone)]
+/// Stable backend identifier used by the shared contract.
+pub(crate) const BACKEND_ID: &str = "valent";
+
+/// Describe the capabilities Viloja currently implements for the Valent adapter.
+pub(crate) fn backend_snapshot() -> BackendSnapshot {
+    BackendSnapshot {
+        id: BackendId(BACKEND_ID.into()),
+        display_name: "Valent".into(),
+        state: BackendState::Running,
+        capabilities: BackendCapabilities {
+            discovery: true,
+            send_files: false,
+            receive_files: false,
+            cancel_outgoing: false,
+            cancel_incoming: false,
+            pairing: false,
+            router_free_transfer: false,
+        },
+    }
+}
+
+/// Convert Valent's discovery record into the protocol-independent device model.
+pub(crate) fn to_backend_device(device: &ValentDeviceInfo) -> Device {
+    let connected = device.state & 1 != 0;
+    let paired = device.state & (1 | 2) != 0;
+
+    Device {
+        id: DeviceId(device.id.clone()),
+        backend: BackendId(BACKEND_ID.into()),
+        name: device.name.clone(),
+        device_type: DeviceType::Unknown,
+        paired,
+        reachable: connected,
+    }
+}
+
 pub struct ValentDeviceInfo {
     pub id: String,
     pub name: String,
@@ -243,4 +283,63 @@ pub(crate) fn watch_name(
 
 pub(crate) fn unwatch_name(watcher_id: NameWatcher) {
     (watcher_id.0)();
+}
+
+
+#[cfg(test)]
+mod backend_contract_tests {
+    use super::*;
+
+    fn info(state: u32) -> ValentDeviceInfo {
+        ValentDeviceInfo {
+            id: "valent-device-1".into(),
+            name: "Example phone".into(),
+            icon_name: "phone-symbolic".into(),
+            state,
+        }
+    }
+
+    #[test]
+    fn discovery_record_maps_to_shared_device_contract() {
+        let device = to_backend_device(&info(1));
+
+        assert_eq!(device.id, DeviceId("valent-device-1".into()));
+        assert_eq!(device.backend, BackendId(BACKEND_ID.into()));
+        assert_eq!(device.name, "Example phone");
+        assert_eq!(device.device_type, DeviceType::Unknown);
+        assert!(device.paired);
+        assert!(device.reachable);
+    }
+
+    #[test]
+    fn paired_offline_device_is_not_reported_as_reachable() {
+        let device = to_backend_device(&info(2));
+
+        assert!(device.paired);
+        assert!(!device.reachable);
+    }
+
+    #[test]
+    fn unpaired_device_remains_unpaired_and_unreachable() {
+        let device = to_backend_device(&info(0));
+
+        assert!(!device.paired);
+        assert!(!device.reachable);
+    }
+
+    #[test]
+    fn valent_snapshot_does_not_claim_unimplemented_transfer_features() {
+        let snapshot = backend_snapshot();
+
+        assert_eq!(snapshot.id, BackendId(BACKEND_ID.into()));
+        assert_eq!(snapshot.display_name, "Valent");
+        assert_eq!(snapshot.state, BackendState::Running);
+        assert!(snapshot.capabilities.discovery);
+        assert!(!snapshot.capabilities.send_files);
+        assert!(!snapshot.capabilities.receive_files);
+        assert!(!snapshot.capabilities.cancel_outgoing);
+        assert!(!snapshot.capabilities.cancel_incoming);
+        assert!(!snapshot.capabilities.pairing);
+        assert!(!snapshot.capabilities.router_free_transfer);
+    }
 }
