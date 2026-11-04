@@ -386,18 +386,18 @@ fn subscribe_backend_device_changes(
     known_devices: Rc<RefCell<HashSet<DeviceId>>>,
     subscriptions: &DeviceSignalSubscriptions,
 ) {
-    let connection = connection.clone();
+    let refresh_connection = connection.clone();
     let refresh: Rc<dyn Fn()> = Rc::new(move || {
         let events = events.clone();
         let known_devices = known_devices.clone();
         let cancellable = gio::Cancellable::new();
-        query_devices(&connection, &cancellable, move |result| {
+        query_devices(&refresh_connection, &cancellable, move |result| {
             if let Ok(devices) = result {
                 publish_device_list(devices, &events, &known_devices);
             }
         });
     });
-    subscribe_device_changes(&connection, refresh, subscriptions);
+    subscribe_device_changes(connection, refresh, subscriptions);
 }
 
 /// Concrete discovery adapter for Valent.
