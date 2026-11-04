@@ -24,7 +24,7 @@ Persistent repository-specific record of commit-level CI checks and red-cross in
 
 - Repository: `SakibShahariar/Viloja`
 - Default branch: `main`
-- Checkpoint SHA: `1446db7e3de1a7b41d95b9da4f6cba6722c2aa37`
+- Checkpoint SHA: `186fedf1b7573a569b3091b0fc25361362b53c06`
 - Initialized: 2026-11-02
 - Baseline: latest branch tip queried through combined commit-status endpoint; empty status list recorded as **unavailable**, not green/red. Older history was not retroactively audited during setup.
 - Next session: review commits after this checkpoint, including the ledger and `AGENTS.md` setup commits; investigate any older red/pending commit specifically identified by the owner.
@@ -102,3 +102,11 @@ The next checkpoint remains `38f5edde4ac793923107b62a3c6db134ef500eea`; review n
 | Commit SHA | Subject | CI result | Workflow run | Notes |
 |---|---|---|---|---|
 | `1446db7e3de1a7b41d95b9da4f6cba6722c2aa37` | test(backend): cover unsupported pairing capability (#7) | green | [41838512434](https://github.com/SakibShahariar/Viloja/actions/runs/41838512434) | cargo check, cargo-deny, and all 37 Rust tests passed. |
+
+
+### Typed backend error model
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `a3659eb99bb24dc7265659d616779e9ed7a1304e` | feat(backend): add typed safe error guidance (#18) | red | [41839210100](https://github.com/SakibShahariar/Viloja/actions/runs/41839210100) | Two remaining fake-backend error literals were not migrated to the new typed constructor. |
+| `186fedf1b7573a569b3091b0fc25361362b53c06` | fix(backend): complete typed error migration (#18) | green | [41839357369](https://github.com/SakibShahariar/Viloja/actions/runs/41839357369) | Completed the remaining constructors; cargo check, cargo-deny, and all 38 Rust tests passed. |

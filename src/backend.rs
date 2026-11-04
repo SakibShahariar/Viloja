@@ -288,28 +288,59 @@ mod tests {
 
     #[test]
     fn backend_errors_provide_safe_messages_and_retry_guidance() {
-        let network = BackendError::new(
-            BackendId("test".into()),
-            BackendErrorKind::Network,
-            "peer=192.0.2.15 token=private-value",
-            true,
-        );
+        let cases = [
+            (
+                BackendErrorKind::DeviceUnavailable,
+                "That device is no longer available. Refresh nearby devices and try again.",
+                false,
+            ),
+            (
+                BackendErrorKind::Network,
+                "The connection was interrupted. Check both devices and try again.",
+                true,
+            ),
+            (
+                BackendErrorKind::PermissionDenied,
+                "Viloja does not have permission to access the selected file or location.",
+                false,
+            ),
+            (
+                BackendErrorKind::ServiceUnavailable,
+                "The sharing service is unavailable. Reconnect the backend and try again.",
+                true,
+            ),
+            (
+                BackendErrorKind::Unsupported,
+                "This action is not supported by the selected backend.",
+                false,
+            ),
+            (
+                BackendErrorKind::InvalidRequest,
+                "The request is invalid or no longer applies. Review it and try again.",
+                false,
+            ),
+            (
+                BackendErrorKind::Unknown,
+                "The operation could not be completed. Try again or inspect diagnostics.",
+                false,
+            ),
+        ];
+        let raw_detail = "peer=192.0.2.15 token=private-value";
 
-        assert!(network.user_message().contains("connection was interrupted"));
-        assert!(network.is_retryable());
-        assert!(!network.user_message().contains("192.0.2.15"));
-        assert!(!network.to_string().contains("private-value"));
-        assert_eq!(network.message, "peer=192.0.2.15 token=private-value");
+        for (kind, expected_message, retryable) in cases {
+            let error = BackendError::new(
+                BackendId("test".into()),
+                kind,
+                raw_detail,
+                retryable,
+            );
 
-        let denied = BackendError::new(
-            BackendId("test".into()),
-            BackendErrorKind::PermissionDenied,
-            "raw permission failure",
-            false,
-        );
-        assert!(denied.user_message().contains("does not have permission"));
-        assert!(!denied.is_retryable());
-        assert!(!denied.to_string().contains("raw permission failure"));
+            assert_eq!(error.user_message(), expected_message);
+            assert_eq!(error.is_retryable(), retryable);
+            assert!(!error.to_string().contains("192.0.2.15"));
+            assert!(!error.to_string().contains("private-value"));
+            assert_eq!(error.message, raw_detail);
+        }
     }
 
     #[test]
