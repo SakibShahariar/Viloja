@@ -16,7 +16,6 @@ pub(crate) const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
 pub(crate) const VALENT_DEVICE_INTERFACE: &str = "ca.andyholmes.Valent.Device";
 pub(crate) const OBJECT_MANAGER_INTERFACE: &str = "org.freedesktop.DBus.ObjectManager";
 
-#[derive(Debug, Clone)]
 /// Stable backend identifier used by the shared contract.
 pub(crate) const BACKEND_ID: &str = "valent";
 
@@ -53,6 +52,7 @@ pub(crate) fn to_backend_device(device: &ValentDeviceInfo) -> Device {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ValentDeviceInfo {
     pub id: String,
     pub name: String,
