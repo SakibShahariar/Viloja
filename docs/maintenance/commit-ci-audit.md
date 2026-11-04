@@ -201,3 +201,15 @@ The only red run in this range was introduced by `d478354fd90b3c41cae41ad76797b6
 
 - Checkpoint: `fdc2a17bfc1925ff242b17ea90eeff234152d349`
 - Unresolved red or pending entries in this reviewed range: none.
+
+
+### Incremental audit: 2026-11-04 (snapshot-driven capability presentation)
+
+Reviewed commit `0deef819c6de7f21562debb59f3fa6377d288224` after the previous checkpoint.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `0deef819c6de7f21562debb59f3fa6377d288224` | refactor(ui): derive capabilities from backend snapshot (#8) | green | [41875662617](https://github.com/SakibShahariar/Viloja/actions/runs/41875662617) | cargo check, cargo-deny, and all 42 Rust tests passed. Capability presentation now derives from the shared backend snapshot. |
+
+- Checkpoint: `0deef819c6de7f21562debb59f3fa6377d288224`
+- Unresolved red or pending entries in this reviewed range: none.

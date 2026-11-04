@@ -8,8 +8,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::backend::{
-    BackendCapabilities, BackendId, BackendSnapshot, BackendState, Device, DeviceId, DeviceType,
+    BackendCapabilities, BackendError, BackendErrorKind, BackendEvent, BackendFuture, BackendId,
+    BackendSnapshot, BackendState, Device, DeviceId, DeviceType, IncomingDecision, SendRequest,
+    SharingBackend, TransferId,
 };
+use std::collections::HashSet;
+use std::sync::mpsc::Sender;
 
 pub(crate) const VALENT_BUS_NAME: &str = "ca.andyholmes.Valent";
 pub(crate) const VALENT_OBJECT_PATH: &str = "/ca/andyholmes/Valent";
@@ -341,5 +345,344 @@ mod backend_contract_tests {
         assert!(!snapshot.capabilities.cancel_incoming);
         assert!(!snapshot.capabilities.pairing);
         assert!(!snapshot.capabilities.router_free_transfer);
+    }
+}
+
+
+fn publish_device_list(
+    devices: Vec<ValentDeviceInfo>,
+    events: &Sender<BackendEvent>,
+    known_devices: &Rc<RefCell<HashSet<DeviceId>>>,
+) {
+    let current_ids = devices
+        .iter()
+        .map(|device| DeviceId(device.id.clone()))
+        .collect::<HashSet<_>>();
+    let mut known = known_devices.borrow_mut();
+
+    let removed = known
+        .difference(&current_ids)
+        .cloned()
+        .collect::<Vec<_>>();
+    for id in removed {
+        known.remove(&id);
+        let _ = events.send(BackendEvent::DeviceLost(id));
+    }
+
+    for device in devices {
+        let device = to_backend_device(&device);
+        let event = if known.insert(device.id.clone()) {
+            BackendEvent::DeviceDiscovered(device)
+        } else {
+            BackendEvent::DeviceUpdated(device)
+        };
+        let _ = events.send(event);
+    }
+}
+
+fn subscribe_backend_device_changes(
+    connection: &gio::DBusConnection,
+    events: Sender<BackendEvent>,
+    known_devices: Rc<RefCell<HashSet<DeviceId>>>,
+    subscriptions: &DeviceSignalSubscriptions,
+) {
+    let connection = connection.clone();
+    let refresh: Rc<dyn Fn()> = Rc::new(move || {
+        let events = events.clone();
+        let known_devices = known_devices.clone();
+        let cancellable = gio::Cancellable::new();
+        query_devices(&connection, &cancellable, move |result| {
+            if let Ok(devices) = result {
+                publish_device_list(devices, &events, &known_devices);
+            }
+        });
+    });
+    subscribe_device_changes(connection.as_ref(), refresh, subscriptions);
+}
+
+/// Concrete discovery adapter for Valent.
+///
+/// Transfer and pairing operations intentionally return Unsupported until Viloja
+/// implements those actions itself; the capability snapshot never advertises them.
+pub(crate) struct ValentBackend {
+    state: Rc<RefCell<BackendState>>,
+    connection: Option<gio::DBusConnection>,
+    subscriptions: DeviceSignalSubscriptions,
+    watcher: Option<NameWatcher>,
+    events: Option<Sender<BackendEvent>>,
+    known_devices: Rc<RefCell<HashSet<DeviceId>>>,
+}
+
+impl ValentBackend {
+    pub(crate) fn new() -> Self {
+        Self {
+            state: Rc::new(RefCell::new(BackendState::Stopped)),
+            connection: None,
+            subscriptions: Rc::new(RefCell::new(None)),
+            watcher: None,
+            events: None,
+            known_devices: Rc::new(RefCell::new(HashSet::new())),
+        }
+    }
+
+    fn publish_state(&self, state: BackendState) {
+        *self.state.borrow_mut() = state.clone();
+        if let Some(events) = &self.events {
+            let _ = events.send(BackendEvent::StateChanged(state));
+        }
+    }
+
+    fn unsupported_error(&self) -> BackendError {
+        BackendError::new(
+            self.id(),
+            BackendErrorKind::Unsupported,
+            "This operation is not implemented by the Valent adapter.",
+            false,
+        )
+    }
+}
+
+async fn query_devices_future(
+    connection: &gio::DBusConnection,
+) -> Result<Vec<ValentDeviceInfo>, BackendError> {
+    let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
+        .expect("the ObjectManager reply signature is valid");
+    let reply = connection
+        .call_future(
+            Some(VALENT_BUS_NAME),
+            VALENT_OBJECT_PATH,
+            OBJECT_MANAGER_INTERFACE,
+            "GetManagedObjects",
+            None,
+            Some(reply_type),
+            gio::DBusCallFlags::NONE,
+            3000,
+        )
+        .await
+        .map_err(|error| {
+            BackendError::new(
+                BackendId(BACKEND_ID.into()),
+                BackendErrorKind::ServiceUnavailable,
+                error.to_string(),
+                true,
+            )
+        })?;
+    Ok(parse_valent_devices(&reply))
+}
+
+impl SharingBackend for ValentBackend {
+    fn id(&self) -> BackendId {
+        BackendId(BACKEND_ID.into())
+    }
+
+    fn snapshot(&self) -> BackendSnapshot {
+        backend_snapshot(self.state.borrow().clone())
+    }
+
+    fn pair_device<'a>(
+        &'a mut self,
+        _device_id: &'a DeviceId,
+    ) -> BackendFuture<'a, Result<(), BackendError>> {
+        Box::pin(async move { Err(self.unsupported_error()) })
+    }
+
+    fn unpair_device<'a>(
+        &'a mut self,
+        _device_id: &'a DeviceId,
+    ) -> BackendFuture<'a, Result<(), BackendError>> {
+        Box::pin(async move { Err(self.unsupported_error()) })
+    }
+
+    fn start(
+        &mut self,
+        events: Sender<BackendEvent>,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        Box::pin(async move {
+            clear_device_signal_subscriptions(&self.subscriptions);
+            if let Some(watcher) = self.watcher.take() {
+                unwatch_name(watcher);
+            }
+            self.connection = None;
+            self.known_devices.borrow_mut().clear();
+            self.events = Some(events.clone());
+            self.publish_state(BackendState::Starting);
+
+            let connection = match gio::bus_get_future(gio::BusType::Session).await {
+                Ok(connection) => connection,
+                Err(error) => {
+                    self.publish_state(BackendState::Unavailable {
+                        reason: "The session bus is unavailable.".into(),
+                    });
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::ServiceUnavailable,
+                        error.to_string(),
+                        true,
+                    ));
+                }
+            };
+            self.connection = Some(connection.clone());
+
+            subscribe_backend_device_changes(
+                &connection,
+                events.clone(),
+                self.known_devices.clone(),
+                &self.subscriptions,
+            );
+
+            let state_appeared = self.state.clone();
+            let state_vanished = self.state.clone();
+            let events_appeared = events.clone();
+            let events_vanished = events.clone();
+            let connection_appeared = connection.clone();
+            let known_appeared = self.known_devices.clone();
+            let known_vanished = self.known_devices.clone();
+            let subscriptions_appeared = self.subscriptions.clone();
+            let subscriptions_vanished = self.subscriptions.clone();
+
+            self.watcher = Some(watch_name(
+                move || {
+                    *state_appeared.borrow_mut() = BackendState::Running;
+                    let _ = events_appeared.send(BackendEvent::StateChanged(BackendState::Running));
+                    subscribe_backend_device_changes(
+                        &connection_appeared,
+                        events_appeared.clone(),
+                        known_appeared.clone(),
+                        &subscriptions_appeared,
+                    );
+                    let events = events_appeared.clone();
+                    let known = known_appeared.clone();
+                    let cancellable = gio::Cancellable::new();
+                    query_devices(&connection_appeared, &cancellable, move |result| {
+                        if let Ok(devices) = result {
+                            publish_device_list(devices, &events, &known);
+                        }
+                    });
+                },
+                move || {
+                    clear_device_signal_subscriptions(&subscriptions_vanished);
+                    let removed = known_vanished
+                        .borrow_mut()
+                        .drain()
+                        .collect::<Vec<_>>();
+                    for id in removed {
+                        let _ = events_vanished.send(BackendEvent::DeviceLost(id));
+                    }
+                    let state = BackendState::Unavailable {
+                        reason: "Valent is not running.".into(),
+                    };
+                    *state_vanished.borrow_mut() = state.clone();
+                    let _ = events_vanished.send(BackendEvent::StateChanged(state));
+                },
+            ));
+
+            match query_devices_future(&connection).await {
+                Ok(devices) => {
+                    publish_device_list(devices, &events, &self.known_devices);
+                    self.publish_state(BackendState::Running);
+                    Ok(())
+                }
+                Err(error) => {
+                    self.publish_state(BackendState::Unavailable {
+                        reason: "Valent is unavailable.".into(),
+                    });
+                    Err(error)
+                }
+            }
+        })
+    }
+
+    fn stop(&mut self) -> BackendFuture<'_, Result<(), BackendError>> {
+        Box::pin(async move {
+            clear_device_signal_subscriptions(&self.subscriptions);
+            if let Some(watcher) = self.watcher.take() {
+                unwatch_name(watcher);
+            }
+            self.connection = None;
+            self.known_devices.borrow_mut().clear();
+            self.publish_state(BackendState::Stopped);
+            self.events = None;
+            Ok(())
+        })
+    }
+
+    fn send_files(
+        &mut self,
+        _request: SendRequest,
+    ) -> BackendFuture<'_, Result<TransferId, BackendError>> {
+        Box::pin(async move { Err(self.unsupported_error()) })
+    }
+
+    fn decide_incoming<'a>(
+        &'a mut self,
+        _transfer_id: &'a TransferId,
+        _decision: IncomingDecision,
+    ) -> BackendFuture<'a, Result<(), BackendError>> {
+        Box::pin(async move { Err(self.unsupported_error()) })
+    }
+
+    fn cancel_transfer<'a>(
+        &'a mut self,
+        _transfer_id: &'a TransferId,
+    ) -> BackendFuture<'a, Result<(), BackendError>> {
+        Box::pin(async move { Err(self.unsupported_error()) })
+    }
+}
+
+#[cfg(test)]
+mod valent_backend_tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    #[test]
+    fn discovery_events_report_added_updated_and_removed_devices() {
+        let (events, receiver) = mpsc::channel();
+        let known = Rc::new(RefCell::new(HashSet::new()));
+        let device = ValentDeviceInfo {
+            id: "device-1".into(),
+            name: "Example phone".into(),
+            icon_name: String::new(),
+            state: 1,
+        };
+
+        publish_device_list(vec![device.clone()], &events, &known);
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(BackendEvent::DeviceDiscovered(device)) if device.name == "Example phone"
+        ));
+
+        publish_device_list(vec![device], &events, &known);
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(BackendEvent::DeviceUpdated(device)) if device.name == "Example phone"
+        ));
+
+        publish_device_list(Vec::new(), &events, &known);
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(BackendEvent::DeviceLost(DeviceId(id))) if id == "device-1"
+        ));
+    }
+
+    #[test]
+    fn valent_backend_implements_the_shared_object_safe_contract() {
+        let backend = ValentBackend::new();
+        let contract: &dyn SharingBackend = &backend;
+
+        assert_eq!(contract.id(), BackendId(BACKEND_ID.into()));
+        assert_eq!(contract.snapshot().state, BackendState::Stopped);
+        assert!(contract.snapshot().capabilities.discovery);
+        assert!(!contract.snapshot().capabilities.send_files);
+    }
+
+    #[test]
+    fn unsupported_valent_operations_return_a_safe_typed_error() {
+        let backend = ValentBackend::new();
+        let error = backend.unsupported_error();
+
+        assert_eq!(error.kind, BackendErrorKind::Unsupported);
+        assert!(!error.is_retryable());
+        assert!(!error.to_string().contains("not implemented by the Valent adapter"));
+        assert!(error.user_message().contains("not supported"));
     }
 }
