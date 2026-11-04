@@ -32,6 +32,11 @@ A missing service, failed session-bus connection, or failed discovery call is su
 
 ### 4. Diagnostic logging
 
+The backend error model now defines fixed user-facing summaries for device, network, permission, service, unsupported, invalid-request, and unknown failures. Retryability is represented separately from the raw backend detail. `BackendError::Display` emits only the safe summary; the raw detail field is retained for internal diagnostics and must not be shown directly or copied into privacy-safe logs.
+
+This is currently a contract-level safeguard. The GTK UI and real Valent adapter do not yet consume the typed error model, so this does not claim that live transfer failures or retry actions are implemented.
+
+
 The diagnostic logger accepts a closed set of event variants rather than arbitrary backend error strings, device names, addresses, tokens, or file paths. Discovery completion records only a numeric device count. The in-memory log is bounded to 500 entries.
 
 Verbosity is session-only. Turning logging off prevents new events from being recorded; it does not erase entries already in memory. The Settings page provides a Clear diagnostics action to erase the in-memory entries and a Refresh diagnostics action to update the visible log. The copy/export action can still export earlier entries until they are cleared. Users should review copied diagnostics before sharing them.
