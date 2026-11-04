@@ -247,8 +247,6 @@ fn refresh_valent_devices(
                 &selection_status,
             );
 
-            let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
-                .expect("the ObjectManager reply signature is valid");
             let state_for_call = state_for_bus.clone();
             let window_for_call = window_weak.clone();
             let status_for_call = status_for_bus.clone();
@@ -257,17 +255,8 @@ fn refresh_valent_devices(
             let selected_device_for_call = selected_device.clone();
             let selection_status_for_call = selection_status.clone();
 
-            connection.call(
-                Some(VALENT_BUS_NAME),
-                VALENT_OBJECT_PATH,
-                OBJECT_MANAGER_INTERFACE,
-                "GetManagedObjects",
-                None,
-                Some(reply_type),
-                gio::DBusCallFlags::NONE,
-                3000,
-                Some(&cancellable),
-                move |reply_result| {
+            valent::query_devices(&connection, &cancellable, move |result| {
+
                     if window_for_call.upgrade().is_none()
                         || !finish_refresh(&state_for_call, request_id)
                     {
@@ -275,11 +264,7 @@ fn refresh_valent_devices(
                     }
 
                     button_for_call.set_sensitive(true);
-                    let result = reply_result
-                        .map(|reply| parse_valent_devices(&reply))
-.map_err(|_| {
-                            "Valent is unavailable or does not expose its device manager.".to_owned()
-                        });
+                    let result = result;
                     status_for_call.set_text(&device_result_status(&result));
 
                     match &result {
@@ -324,8 +309,7 @@ fn refresh_valent_devices(
                         clear_selected_device(&selected_device_for_call);
                         selection_status_for_call.set_text("No device selected.");
                     }
-                },
-            );
+            });
         },
     );
 }

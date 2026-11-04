@@ -129,3 +129,33 @@ pub fn device_result_status(result: &Result<Vec<ValentDeviceInfo>, String>) -> S
     }
 }
 
+
+/// Query Valent's ObjectManager and decode its current device objects.
+pub fn query_devices(
+    connection: &gio::DBusConnection,
+    cancellable: &gio::Cancellable,
+    callback: impl FnOnce(Result<Vec<ValentDeviceInfo>, String>) + 'static,
+) {
+    let reply_type = glib::VariantTy::new("(a{oa{sa{sv}}})")
+        .expect("the ObjectManager reply signature is valid");
+
+    connection.call(
+        Some(VALENT_BUS_NAME),
+        VALENT_OBJECT_PATH,
+        OBJECT_MANAGER_INTERFACE,
+        "GetManagedObjects",
+        None,
+        Some(reply_type),
+        gio::DBusCallFlags::NONE,
+        3000,
+        Some(cancellable),
+        move |reply_result| {
+            let result = reply_result
+                .map(|reply| parse_valent_devices(&reply))
+                .map_err(|_| {
+                    "Valent is unavailable or does not expose its device manager.".to_owned()
+                });
+            callback(result);
+        },
+    );
+}
