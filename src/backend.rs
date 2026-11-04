@@ -507,10 +507,12 @@ mod tests {
                     return Err(BackendError::new(self.id(), BackendErrorKind::Unsupported, "backend does not support unpairing", false));
                 }
                 if &self.device.id != device_id {
-                    return Err(BackendError {
-                        backend: self.id(),
-                        message: "unknown device".into(),
-                    });
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::DeviceUnavailable,
+                        "unknown device",
+                        false,
+                    ));
                 }
 
                 self.device.paired = false;
@@ -621,10 +623,12 @@ mod tests {
                     let transfer = self
                         .transfers
                         .get_mut(transfer_id)
-                        .ok_or_else(|| BackendError {
-                            backend: backend_id.clone(),
-                            message: "unknown transfer".into(),
-                        })?;
+                        .ok_or_else(|| BackendError::new(
+                            backend_id.clone(),
+                            BackendErrorKind::InvalidRequest,
+                            "unknown transfer",
+                            false,
+                        ))?;
 
                     let supported = match transfer.direction {
                         TransferDirection::Incoming => capabilities.cancel_incoming,
