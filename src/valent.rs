@@ -683,4 +683,26 @@ mod valent_backend_tests {
         assert!(!error.to_string().contains("not implemented by the Valent adapter"));
         assert!(error.user_message().contains("not supported"));
     }
+
+    #[test]
+    fn state_publication_includes_a_backend_identified_snapshot_event() {
+        let mut backend = ValentBackend::new();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        backend.events = Some(sender);
+
+        backend.publish_state(BackendState::Running);
+
+        assert_eq!(
+            receiver.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Running)
+        );
+        match receiver.recv().unwrap() {
+            BackendEvent::BackendSnapshotChanged(snapshot) => {
+                assert_eq!(snapshot.id, BackendId(BACKEND_ID.into()));
+                assert_eq!(snapshot.display_name, "Valent");
+                assert_eq!(snapshot.state, BackendState::Running);
+            }
+            other => panic!("expected backend snapshot change, received {other:?}"),
+        }
+    }
 }
