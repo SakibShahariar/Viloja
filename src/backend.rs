@@ -140,6 +140,7 @@ impl TransferSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendEvent {
     StateChanged(BackendState),
+    BackendSnapshotChanged(BackendSnapshot),
     DeviceDiscovered(Device),
     DeviceUpdated(Device),
     DeviceLost(DeviceId),
