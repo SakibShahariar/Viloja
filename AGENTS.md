@@ -127,3 +127,45 @@ Classify every open issue into exactly one of these categories during triage. Re
 - For Category E, ask the owner promptly and track the answer needed. Do not leave it indefinitely in a generic blocked/deferred bucket.
 - Keep Categories B, C, and D visible and actionable: state exactly what remains, who or what can unblock it, and when it should be revisited.
 - Reassess categories when code, tests, CI, upstream dependencies, environments, or owner decisions change. Never close an issue solely because it has been categorized.
+
+## Viloja Product Roadmap: Stage-Gated Universal Sharing
+
+Viloja's long-term direction is a modular sharing hub that can exchange many kinds of content over multiple compatible protocols and connection paths. This is a staged product direction, not a claim that every method or content type is currently supported.
+
+### Stage sequence and canonical issue map
+
+- **Stage 0 — Stabilize the platform foundation:** enforce the backend-neutral contract and capability reporting (#7, #8), complete the real integration proofs (#1, #2), and maintain the security review (#36). Do not build new protocol features on guessed APIs or placeholder adapters.
+- **Stage 1 — Unified sharing foundation:** define typed share items and capability negotiation (#45), then capability-aware connection/transport selection (#46). Existing backend interfaces remain the boundary between UI, protocols, and transports.
+- **Stage 2 — Everyday content:** build on existing file/folder, link, and clipboard issues (#13, #28, #29, #41–#44); add contact cards (#47), secure Wi-Fi credential sharing (#48), and mixed-content sessions (#49).
+- **Stage 3 — Local connectivity and desktop integration:** pairing/trust (#11), QR/manual connection fallback (#50), browser-based sessions (#51), GNOME sharing entry points (#52), and existing notifications/packaging work (#27, #34).
+- **Stage 4 — Protocol interoperability:** add independently maintained, capability-reporting protocol adapters only after real-device and security validation (#53). Existing Valent and Quick Share investigations (#1, #2) are evidence-gathering tasks, not permanent architecture names.
+- **Stage 5 — Alternative local transports:** investigate and validate hotspot (#31), Wi-Fi Direct (#32), and Bluetooth discovery/fallback (#33). These are distinct capabilities and must not be inferred from a successful LAN transfer.
+- **Stage 6 — Internet/remote sharing:** first complete the security, privacy, and operational feasibility decision (#54); only then consider consent-based relay implementation (#55).
+- **Stage 7 — Advanced real-time sharing:** investigate screen and live-media sharing only after the core sharing, receiving, connection, and security stages are stable (#56).
+
+### Stage gates
+
+- Work in dependency order. A later-stage issue may receive bounded research while earlier work proceeds, but production implementation must not bypass its stated prerequisites.
+- Every stage must have explicit entry conditions, testable acceptance criteria, and exit evidence. The stage is not complete merely because its issues were created or code was merged.
+- A stage exit review must identify completed issues, unresolved dependencies, security review status, automated test/CI evidence, and required real-device or live-GNOME validation.
+- Keep hardware-, network-, desktop-, and peer-dependent criteria unchecked until the actual environment is tested. A mock, unit test, or successful build is not interoperability evidence.
+- Capability reporting must distinguish **supported**, **unsupported**, **unavailable**, and **not yet verified**. Never advertise an unverified path as supported.
+- Prefer a small, working end-to-end subset over broad placeholder coverage. Preserve explicit user approval for incoming transfers and sending sensitive content.
+- Reassess the sequence when a protocol, upstream dependency, platform API, security finding, or test result changes. Record the reason rather than silently skipping a gate.
+
+### Neutral protocol and transport naming policy
+
+- Viloja owns its architecture and naming. Never use the name of a reference application as an engine type, backend type, adapter type, transport type, registry key, module namespace, or core abstraction.
+- Use names based on a verified protocol, standard, or technical role (for example, `NearbyProtocolAdapter`, `LanTransferAdapter`, `WebRtcSessionAdapter`, or a precise protocol identifier when one is actually implemented).
+- Keep **protocol**, **transport**, **discovery**, **pairing/authentication**, and **content type** as separate concepts. A protocol may use multiple transports; a transport does not itself define interoperability.
+- Reference applications may appear in research notes, compatibility matrices, citations, and test-peer descriptions. State exactly what was observed and do not infer that Viloja implements the reference application's internal engine or full feature set.
+- Do not create one adapter per reference application when multiple peers implement the same protocol. Prefer one protocol adapter with explicit peer-compatibility tests.
+- Do not name an adapter after a protocol until its wire behavior and compatibility target have been verified. Use a neutral experimental name during investigation.
+- Do not copy another application's implementation, branding, or product-specific assumptions as a substitute for protocol documentation, licensing review, and independent tests.
+
+### Roadmap issue maintenance
+
+- Keep the issue map above synchronized when roadmap issues are added, split, superseded, or closed.
+- Link new issues to their stage, prerequisites, and related existing issues. Search the open backlog before creating an issue to avoid duplicates.
+- Do not mark a whole stage complete while any required real-device, security, packaging, or live-desktop gate remains unverified.
+
