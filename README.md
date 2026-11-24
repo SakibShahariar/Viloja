@@ -44,6 +44,28 @@ cargo run
 
 The first Cargo build will download Rust dependencies. The application currently only provides the UI shell and file-selection preview; it does not send or receive files.
 
+## Install for the current user
+
+Viloja is not packaged as an RPM or Flatpak yet. To build a release binary and install a GNOME launcher for your user account:
+
+```sh
+./scripts/install-user.sh
+```
+
+The script installs the binary to `~/.local/bin/viloja` and a desktop entry to `~/.local/share/applications/io.github.SakibShahariar.Viloja.desktop`, then refreshes the desktop entry cache when `update-desktop-database` is available. It uses the generic `folder-publicshare-symbolic` icon until the project has its own icon. The native development dependencies above are needed to build; running the installed binary needs the GTK4 and libadwaita runtime libraries already present on a Fedora GNOME system.
+
+Override the install prefix with `VILOJA_PREFIX`, and use `DESTDIR` for staged installs. For example:
+
+```sh
+DESTDIR=/tmp/viloja-stage VILOJA_PREFIX=/usr/local ./scripts/install-user.sh
+```
+
+To uninstall a default user-local install:
+
+```sh
+rm -f ~/.local/bin/viloja ~/.local/share/applications/io.github.SakibShahariar.Viloja.desktop
+```
+
 ## Planned experience
 
 - **Nearby:** discovered devices and connection status.
