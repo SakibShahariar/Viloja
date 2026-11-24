@@ -40,10 +40,26 @@ fn clear_selected_device(selected_device: &Rc<RefCell<Option<String>>>) -> bool 
     selected_device.borrow_mut().take().is_some()
 }
 
-fn clear_device_list(device_list: &gtk::Box) {
-    while let Some(child) = device_list.first_child() {
-        device_list.remove(&child);
+fn make_action_row(title: &str) -> adw::ActionRow {
+    adw::ActionRow::builder()
+        .title(title)
+        .activatable(true)
+        .build()
+}
+
+/// Rows added to a `PreferencesGroup` through `add`, tracked so the group can be
+/// cleared without touching its internal header/list widgets.
+type GroupRows = Rc<RefCell<Vec<gtk::Widget>>>;
+
+fn clear_group(group: &adw::PreferencesGroup, rows: &GroupRows) {
+    for row in rows.borrow_mut().drain(..) {
+        group.remove(&row);
     }
+}
+
+fn add_row(group: &adw::PreferencesGroup, rows: &GroupRows, row: &impl IsA<gtk::Widget>) {
+    group.add(row);
+    rows.borrow_mut().push(row.clone().upcast());
 }
 
 fn connection_label(device: &backend::Device) -> &'static str {
@@ -57,23 +73,27 @@ fn connection_label(device: &backend::Device) -> &'static str {
 }
 
 fn render_device_list(
-    device_list: &gtk::Box,
+    device_list: &adw::PreferencesGroup,
+    device_rows: &GroupRows,
     known_devices: &HashMap<backend::DeviceId, backend::Device>,
     selected_device: &Rc<RefCell<Option<String>>>,
-    selection_status: &gtk::Label,
+    selection_status: &adw::ActionRow,
 ) {
-    clear_device_list(device_list);
+    clear_group(device_list, device_rows);
     let mut devices = known_devices.values().cloned().collect::<Vec<_>>();
     devices.sort_by_key(|device| device.name.to_lowercase());
 
     match prune_selected_device(selected_device, &devices) {
-        Some(name) => selection_status.set_text(&format!("Selected destination: {name}")),
-        None => selection_status.set_text("No device selected."),
+        Some(name) => selection_status.set_subtitle(&format!("Selected destination: {name}")),
+        None => selection_status.set_subtitle("No device selected."),
     }
 
     for device in devices {
-        let card = make_card(&device.name, connection_label(&device));
-        let row_content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        let row = adw::ActionRow::builder()
+            .title(&device.name)
+            .subtitle(connection_label(&device))
+            .activatable(true)
+            .build();
         let icon_name = match device.device_type {
             backend::DeviceType::Phone => "phone-symbolic",
             backend::DeviceType::Tablet => "tablet-symbolic",
@@ -81,29 +101,24 @@ fn render_device_list(
         };
         let icon = gtk::Image::from_icon_name(icon_name);
         icon.set_pixel_size(32);
-        row_content.append(&icon);
-        row_content.append(&card);
+        row.add_prefix(&icon);
 
-        let row = gtk::Button::new();
-        row.add_css_class("flat");
-        row.set_hexpand(true);
-        row.set_child(Some(&row_content));
         let selected = selected_device.clone();
         let selection_status = selection_status.clone();
         let device_id = device.id.0.clone();
         let device_name = device.name.clone();
-        row.connect_clicked(move |_| {
+        row.connect_activated(move |_| {
             *selected.borrow_mut() = Some(device_id.clone());
-            selection_status.set_text(&format!("Selected destination: {device_name}"));
+            selection_status.set_subtitle(&format!("Selected destination: {device_name}"));
         });
-        device_list.append(&row);
+        add_row(device_list, device_rows, &row);
     }
 }
 
 fn start_backend(
     backend: BackendSlot,
     events: std::sync::mpsc::Sender<backend::BackendEvent>,
-    refresh_button: gtk::Button,
+    refresh_button: adw::ActionRow,
 ) {
     diagnostics::record(
         DiagnosticLevel::Info,
@@ -126,43 +141,23 @@ fn start_backend(
     });
 }
 
-fn make_label(text: &str, css_class: &str) -> gtk::Label {
-    let label = gtk::Label::new(Some(text));
-    label.set_xalign(0.0);
-    label.set_wrap(true);
-    if !css_class.is_empty() {
-        label.add_css_class(css_class);
-    }
-    label
+fn make_page(title: &str, description: &str) -> adw::PreferencesPage {
+    adw::PreferencesPage::builder()
+        .title(title)
+        .description(description)
+        .build()
 }
 
-fn make_page(title: &str, description: &str) -> gtk::Box {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 18);
-    page.set_margin_top(28);
-    page.set_margin_bottom(28);
-    page.set_margin_start(28);
-    page.set_margin_end(28);
-    page.append(&make_label(title, "title-1"));
-    page.append(&make_label(description, "dim-label"));
-    page
-}
-
-fn make_card(title: &str, body: &str) -> gtk::Box {
-    let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    card.add_css_class("card");
-    card.set_margin_top(6);
-    card.set_margin_bottom(6);
-    card.set_margin_start(12);
-    card.set_margin_end(12);
-    card.set_hexpand(true);
-    card.append(&make_label(title, "heading"));
-    card.append(&make_label(body, ""));
-    card
+fn make_card(title: &str, body: &str) -> adw::PreferencesGroup {
+    adw::PreferencesGroup::builder()
+        .title(title)
+        .description(body)
+        .build()
 }
 
 const VALENT_LIMITATIONS: &str = "Device discovery: experimental session-D-Bus query; not verified against an installed Valent/GNOME session. Pairing: handled in Valent, not managed by Viloja. Sending and receiving files: not implemented. Router-free, hotspot, Wi-Fi Direct, and Bluetooth transfers: not verified; no support is claimed.";
 
-fn backend_limitations_card() -> gtk::Box {
+fn backend_limitations_card() -> adw::PreferencesGroup {
     make_card("Current backend: Valent (experimental)", VALENT_LIMITATIONS)
 }
 
@@ -212,26 +207,23 @@ fn backend_capabilities_text(snapshot: &backend::BackendSnapshot) -> String {
     )
 }
 
-fn backend_capabilities_card(snapshot: &backend::BackendSnapshot) -> gtk::Box {
-    let body = backend_capabilities_text(snapshot);
-    make_card(
-        &format!("{} backend capabilities", snapshot.display_name),
-        &body,
-    )
+fn backend_capabilities_row(snapshot: &backend::BackendSnapshot) -> adw::ActionRow {
+    adw::ActionRow::builder()
+        .title(format!("{} backend capabilities", snapshot.display_name))
+        .subtitle(backend_capabilities_text(snapshot))
+        .subtitle_lines(4)
+        .build()
 }
 
-fn render_backend_capabilities(container: &gtk::Box, registry: &backend::BackendRegistry) {
-    clear_device_list(container);
+fn render_backend_capabilities(
+    container: &adw::PreferencesGroup,
+    rows: &GroupRows,
+    registry: &backend::BackendRegistry,
+) {
+    clear_group(container, rows);
     for snapshot in registry.snapshots() {
-        container.append(&backend_capabilities_card(&snapshot));
+        add_row(container, rows, &backend_capabilities_row(&snapshot));
     }
-}
-
-fn make_scrolled_page(content: &gtk::Box) -> gtk::ScrolledWindow {
-    let scrolled = gtk::ScrolledWindow::new();
-    scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-    scrolled.set_child(Some(content));
-    scrolled
 }
 
 fn build_ui(app: &adw::Application) {
@@ -256,56 +248,74 @@ fn build_ui(app: &adw::Application) {
         Rc::new(RefCell::new(HashMap::new()));
 
     let header = adw::HeaderBar::new();
-    let app_title = gtk::Label::new(Some("Viloja"));
-    app_title.add_css_class("title");
-    header.set_title_widget(Some(&app_title));
-
-    let stack = gtk::Stack::new();
-    stack.set_transition_type(gtk::StackTransitionType::Crossfade);
-    stack.set_transition_duration(150);
+    let stack = adw::ViewStack::new();
     stack.set_vexpand(true);
     stack.set_hexpand(true);
+    let switcher = adw::ViewSwitcher::builder().stack(&stack).build();
+    header.set_title_widget(Some(&switcher));
 
-    let sidebar = gtk::StackSidebar::new();
-    sidebar.set_stack(&stack);
-    sidebar.set_width_request(190);
-
+    // Nearby
     let nearby = make_page(
         "Nearby",
         "Find devices known to the active sharing backend.",
     );
-    let discovery_status = make_label("Starting device discovery…", "");
-    let refresh_button = gtk::Button::with_label("Refresh devices");
+    let discovery_group = adw::PreferencesGroup::builder().title("Discovery").build();
+    let discovery_status = adw::ActionRow::builder()
+        .title("Status")
+        .subtitle("Starting device discovery…")
+        .build();
+    let refresh_button = make_action_row("Refresh devices");
     refresh_button.add_css_class("suggested-action");
-    refresh_button.set_halign(gtk::Align::Start);
     refresh_button.set_sensitive(false);
-    let device_list = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    discovery_group.add(&discovery_status);
+    discovery_group.add(&refresh_button);
+    nearby.add(&discovery_group);
+
+    let device_list = adw::PreferencesGroup::builder()
+        .title("Devices")
+        .description("Devices reported by the active backend appear here.")
+        .build();
+    let device_rows: GroupRows = Rc::new(RefCell::new(Vec::new()));
     let selected_device: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-    let selection_status = make_label("No device selected.", "dim-label");
-    nearby.append(&refresh_button);
-    nearby.append(&discovery_status);
-    nearby.append(&device_list);
-    nearby.append(&selection_status);
-    nearby.append(&backend_limitations_card());
-    let nearby_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    render_backend_capabilities(&nearby_backend_cards, &backend_registry.borrow());
-    nearby.append(&nearby_backend_cards);
-    let settings_backend_cards = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let selection_status = adw::ActionRow::builder()
+        .title("Selected destination")
+        .subtitle("No device selected.")
+        .build();
+    let selection_group = adw::PreferencesGroup::builder().title("Selection").build();
+    selection_group.add(&selection_status);
+    nearby.add(&device_list);
+    nearby.add(&selection_group);
+    nearby.add(&backend_limitations_card());
+    let nearby_backend_cards = adw::PreferencesGroup::builder()
+        .title("Backend capabilities")
+        .build();
+    let nearby_backend_rows: GroupRows = Rc::new(RefCell::new(Vec::new()));
+    render_backend_capabilities(
+        &nearby_backend_cards,
+        &nearby_backend_rows,
+        &backend_registry.borrow(),
+    );
+    nearby.add(&nearby_backend_cards);
+    let settings_backend_cards = adw::PreferencesGroup::builder()
+        .title("Backend capabilities")
+        .build();
+    let settings_backend_rows: GroupRows = Rc::new(RefCell::new(Vec::new()));
 
     let backend_for_refresh = backend.clone();
     let events_for_refresh = event_sender.clone();
     let button_for_refresh = refresh_button.clone();
     let devices_for_refresh = known_devices.clone();
     let list_for_refresh = device_list.clone();
+    let rows_for_refresh = device_rows.clone();
     let selected_for_refresh = selected_device.clone();
     let selection_for_refresh = selection_status.clone();
     let status_for_refresh = discovery_status.clone();
-    refresh_button.connect_clicked(move |_| {
+    refresh_button.connect_activated(move |_| {
         devices_for_refresh.borrow_mut().clear();
-        clear_device_list(&list_for_refresh);
+        clear_group(&list_for_refresh, &rows_for_refresh);
         clear_selected_device(&selected_for_refresh);
-        selection_for_refresh.set_text("No device selected.");
-        status_for_refresh.set_text("Refreshing devices…");
+        selection_for_refresh.set_subtitle("No device selected.");
+        status_for_refresh.set_subtitle("Refreshing devices…");
         button_for_refresh.set_sensitive(false);
         start_backend(
             backend_for_refresh.clone(),
@@ -317,12 +327,15 @@ fn build_ui(app: &adw::Application) {
     let receiver = event_receiver;
     let devices_for_events = known_devices.clone();
     let list_for_events = device_list.clone();
+    let rows_for_events = device_rows.clone();
     let selected_for_events = selected_device.clone();
     let selection_for_events = selection_status.clone();
     let status_for_events = discovery_status.clone();
     let registry_for_events = backend_registry.clone();
     let nearby_cards_for_events = nearby_backend_cards.clone();
+    let nearby_rows_for_events = nearby_backend_rows.clone();
     let settings_cards_for_events = settings_backend_cards.clone();
+    let settings_rows_for_events = settings_backend_rows.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         loop {
             let event = match receiver.try_recv() {
@@ -334,16 +347,16 @@ fn build_ui(app: &adw::Application) {
             match event {
                 backend::BackendEvent::StateChanged(state) => match state {
                     backend::BackendState::Starting => {
-                        status_for_events.set_text("Connecting to the sharing backend…");
+                        status_for_events.set_subtitle("Connecting to the sharing backend…");
                     }
                     backend::BackendState::Running => {
                         let count = devices_for_events.borrow().len();
                         if count == 0 {
-                            status_for_events.set_text(
+                            status_for_events.set_subtitle(
                                 "The backend is available, but it has no known devices yet.",
                             );
                         } else {
-                            status_for_events.set_text(&format!(
+                            status_for_events.set_subtitle(&format!(
                                 "Found {count} device{}.",
                                 if count == 1 { "" } else { "s" }
                             ));
@@ -355,11 +368,12 @@ fn build_ui(app: &adw::Application) {
                         clear_selected_device(&selected_for_events);
                         render_device_list(
                             &list_for_events,
+                            &rows_for_events,
                             &devices_for_events.borrow(),
                             &selected_for_events,
                             &selection_for_events,
                         );
-                        status_for_events.set_text(
+                        status_for_events.set_subtitle(
                             "Valent is unavailable. Start Valent to restore discovery; Viloja will retry when it appears.",
                         );
                         diagnostics::record(
@@ -368,10 +382,10 @@ fn build_ui(app: &adw::Application) {
                         );
                     }
                     backend::BackendState::Stopped => {
-                        status_for_events.set_text("Device discovery is stopped.");
+                        status_for_events.set_subtitle("Device discovery is stopped.");
                     }
                     backend::BackendState::Stopping => {
-                        status_for_events.set_text("Stopping device discovery…");
+                        status_for_events.set_subtitle("Stopping device discovery…");
                     }
                 },
                 backend::BackendEvent::DeviceDiscovered(device) => {
@@ -382,11 +396,12 @@ fn build_ui(app: &adw::Application) {
                     let count = devices.len();
                     render_device_list(
                         &list_for_events,
+                        &rows_for_events,
                         &devices,
                         &selected_for_events,
                         &selection_for_events,
                     );
-                    status_for_events.set_text(&format!(
+                    status_for_events.set_subtitle(&format!(
                         "Found {count} device{}.",
                         if count == 1 { "" } else { "s" }
                     ));
@@ -404,6 +419,7 @@ fn build_ui(app: &adw::Application) {
                     let devices = devices_for_events.borrow();
                     render_device_list(
                         &list_for_events,
+                        &rows_for_events,
                         &devices,
                         &selected_for_events,
                         &selection_for_events,
@@ -413,6 +429,7 @@ fn build_ui(app: &adw::Application) {
                     devices_for_events.borrow_mut().remove(&device_id);
                     render_device_list(
                         &list_for_events,
+                        &rows_for_events,
                         &devices_for_events.borrow(),
                         &selected_for_events,
                         &selection_for_events,
@@ -422,10 +439,12 @@ fn build_ui(app: &adw::Application) {
                     registry_for_events.borrow_mut().register(snapshot);
                     render_backend_capabilities(
                         &nearby_cards_for_events,
+                        &nearby_rows_for_events,
                         &registry_for_events.borrow(),
                     );
                     render_backend_capabilities(
                         &settings_cards_for_events,
+                        &settings_rows_for_events,
                         &registry_for_events.borrow(),
                     );
                 }
@@ -446,86 +465,106 @@ fn build_ui(app: &adw::Application) {
         glib::Propagation::Proceed
     });
 
-    stack.add_titled(&make_scrolled_page(&nearby), Some("nearby"), "Nearby");
+    stack.add_titled(&nearby, Some("nearby"), "Nearby");
 
+    // Send files
     let send = make_page(
         "Send files",
         "Choose files to prepare a transfer. Viloja cannot send them yet.",
     );
-    send.append(&backend_limitations_card());
-    let send_selection_status = make_label("No files selected.", "");
-    let choose_button = gtk::Button::with_label("Choose files…");
+    send.add(&backend_limitations_card());
+    let choose_group = adw::PreferencesGroup::builder()
+        .title("Select files")
+        .description(
+            "You can select multiple files and review the selection here. Nothing is sent by this prototype.",
+        )
+        .build();
+    let choose_button = make_action_row("Choose files…");
     choose_button.add_css_class("suggested-action");
-    send.append(&make_card(
-        "Select files",
-        "You can select multiple files and review the selection here. Nothing is sent by this prototype.",
-    ));
-    send.append(&choose_button);
-    send.append(&send_selection_status);
-    send.append(&make_label(
-        "Transfer will remain disabled until a real device action is connected.",
-        "dim-label",
-    ));
-    stack.add_titled(&make_scrolled_page(&send), Some("send"), "Send files");
+    choose_group.add(&choose_button);
+    send.add(&choose_group);
+    let send_selection_status = adw::ActionRow::builder()
+        .title("Selected files")
+        .subtitle("No files selected.")
+        .build();
+    let send_selection_group = adw::PreferencesGroup::builder().title("Selection").build();
+    send_selection_group.add(&send_selection_status);
+    send.add(&send_selection_group);
+    let transfer_status = adw::PreferencesGroup::builder()
+        .title("Transfer status")
+        .description("Transfer will remain disabled until a real device action is connected.")
+        .build();
+    send.add(&transfer_status);
+    stack.add_titled(&send, Some("send"), "Send files");
 
+    // Transfers
     let transfers = make_page(
         "Transfers",
         "Transfer monitoring is unavailable until a real backend transfer flow is integrated.",
     );
-    transfers.append(&backend_limitations_card());
-    transfers.append(&make_card(
-        "No transfers yet",
-        "Transfer progress, cancellation, completion, and error states will appear once transfer events are integrated.",
-    ));
-    stack.add_titled(
-        &make_scrolled_page(&transfers),
-        Some("transfers"),
-        "Transfers",
+    transfers.add(&backend_limitations_card());
+    transfers.add(
+        &adw::PreferencesGroup::builder()
+            .title("No transfers yet")
+            .description(
+                "Transfer progress, cancellation, completion, and error states will appear once transfer events are integrated.",
+            )
+            .build(),
     );
+    stack.add_titled(&transfers, Some("transfers"), "Transfers");
 
+    // History
     let history = make_page(
         "History",
         "Viloja does not yet store transfer history because transfers are not integrated.",
     );
-    history.append(&backend_limitations_card());
-    history.append(&make_card(
-        "History is empty",
-        "Viloja does not record transfer history in this prototype.",
-    ));
-    stack.add_titled(&make_scrolled_page(&history), Some("history"), "History");
+    history.add(&backend_limitations_card());
+    history.add(
+        &adw::PreferencesGroup::builder()
+            .title("History is empty")
+            .description("Viloja does not record transfer history in this prototype.")
+            .build(),
+    );
+    stack.add_titled(&history, Some("history"), "History");
 
+    // Settings
     let settings = make_page(
         "Settings",
         "Backend availability and transfer preferences will be configurable when those integrations exist.",
     );
-    settings.append(&backend_limitations_card());
-    render_backend_capabilities(&settings_backend_cards, &backend_registry.borrow());
-    settings.append(&settings_backend_cards);
-    settings.append(&make_card(
+    settings.add(&backend_limitations_card());
+    settings.add(&settings_backend_cards);
+    settings.add(&make_card(
         "Receiving",
         "Receiving preferences will be available when the backend exposes its supported options.",
     ));
-    settings.append(&make_card(
+    settings.add(&make_card(
         "Downloads",
         "The download destination has not been configured yet.",
     ));
-    settings.append(&make_card(
+    settings.add(&make_card(
         "Privacy",
         "Device visibility and trust controls will be based on the active backend's real capabilities.",
     ));
 
-    settings.append(&make_label("Diagnostics", "title-2"));
-    settings.append(&make_label(
-        "Diagnostic entries use fixed event names and numeric counts only. Device names, addresses, tokens, paths, and raw backend error strings are never added to this log.",
-        "dim-label",
-    ));
-    let verbosity = gtk::DropDown::from_strings(&["Errors only", "Normal", "Verbose", "Off"]);
+    let diagnostics_group = adw::PreferencesGroup::builder()
+        .title("Diagnostics")
+        .description(
+            "Diagnostic entries use fixed event names and numeric counts only. Device names, addresses, tokens, paths, and raw backend error strings are never added to this log.",
+        )
+        .build();
+    let verbosity = adw::ComboRow::builder()
+        .title("Log verbosity")
+        .model(&gtk::StringList::new(&[
+            "Errors only",
+            "Normal",
+            "Verbose",
+            "Off",
+        ]))
+        .build();
     verbosity.set_selected(diagnostics::verbosity_index());
-    verbosity.connect_selected_notify(|dropdown| {
-        diagnostics::set_verbosity(dropdown.selected());
-    });
-    settings.append(&make_label("Log verbosity", "heading"));
-    settings.append(&verbosity);
+    verbosity.connect_selected_notify(|row| diagnostics::set_verbosity(row.selected()));
+    diagnostics_group.add(&verbosity);
 
     let diagnostic_view = gtk::TextView::new();
     diagnostic_view.set_editable(false);
@@ -536,51 +575,41 @@ fn build_ui(app: &adw::Application) {
     let diagnostic_scroll = gtk::ScrolledWindow::new();
     diagnostic_scroll.set_min_content_height(180);
     diagnostic_scroll.set_child(Some(&diagnostic_view));
-    settings.append(&diagnostic_scroll);
+    diagnostics_group.add(&diagnostic_scroll);
 
-    let refresh_diagnostics = gtk::Button::with_label("Refresh diagnostics");
-    refresh_diagnostics.set_halign(gtk::Align::Start);
+    let refresh_diagnostics = make_action_row("Refresh diagnostics");
     let refresh_buffer = diagnostic_view.buffer();
-    refresh_diagnostics.connect_clicked(move |_| {
-        refresh_buffer.set_text(&diagnostics::export());
-    });
-    settings.append(&refresh_diagnostics);
+    refresh_diagnostics.connect_activated(move |_| refresh_buffer.set_text(&diagnostics::export()));
+    diagnostics_group.add(&refresh_diagnostics);
 
-    let copy_diagnostics = gtk::Button::with_label("Copy diagnostics");
-    copy_diagnostics.set_halign(gtk::Align::Start);
+    let copy_diagnostics = make_action_row("Copy diagnostics");
     let diagnostic_buffer = diagnostic_view.buffer();
     let diagnostic_display = gtk::prelude::WidgetExt::display(&window);
-    copy_diagnostics.connect_clicked(move |_| {
+    copy_diagnostics.connect_activated(move |_| {
         let exported = diagnostics::export();
         diagnostic_buffer.set_text(&exported);
         diagnostic_display.clipboard().set_text(&exported);
     });
-    settings.append(&copy_diagnostics);
+    diagnostics_group.add(&copy_diagnostics);
 
-    let clear_diagnostics = gtk::Button::with_label("Clear diagnostics");
-    clear_diagnostics.set_halign(gtk::Align::Start);
+    let clear_diagnostics = make_action_row("Clear diagnostics");
     let clear_buffer = diagnostic_view.buffer();
-    clear_diagnostics.connect_clicked(move |_| {
+    clear_diagnostics.connect_activated(move |_| {
         diagnostics::clear();
         clear_buffer.set_text("");
     });
-    settings.append(&clear_diagnostics);
-    stack.add_titled(&make_scrolled_page(&settings), Some("settings"), "Settings");
+    diagnostics_group.add(&clear_diagnostics);
+    settings.add(&diagnostics_group);
+    stack.add_titled(&settings, Some("settings"), "Settings");
 
-    let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    body.append(&sidebar);
-    body.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    body.append(&stack);
-
-    let layout = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    layout.append(&header);
-    layout.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-    layout.append(&body);
-    window.set_content(Some(&layout));
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&header);
+    toolbar.set_content(Some(&stack));
+    window.set_content(Some(&toolbar));
 
     let chooser_window = window.clone();
     let status_label = send_selection_status.clone();
-    choose_button.connect_clicked(move |_| {
+    choose_button.connect_activated(move |_| {
         let chooser = gtk::FileChooserNative::new(
             Some("Choose files to prepare"),
             Some(&chooser_window),
@@ -595,9 +624,9 @@ fn build_ui(app: &adw::Application) {
             if response == gtk::ResponseType::Accept {
                 let count = dialog.files().n_items();
                 if count == 1 {
-                    status.set_text("1 file selected. Ready for a backend integration.");
+                    status.set_subtitle("1 file selected. Ready for a backend integration.");
                 } else {
-                    status.set_text(&format!(
+                    status.set_subtitle(&format!(
                         "{count} files selected. Ready for a backend integration."
                     ));
                 }
