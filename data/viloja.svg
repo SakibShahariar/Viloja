@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1E1B4B"/>
+      <stop offset="0.55" stop-color="#4C2A9E"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.28" cy="0.18" r="0.95">
+      <stop offset="0" stop-color="#C4B5FD" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#A78BFA" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#A78BFA" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DBEAFE"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#0B0716" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+
+  <!-- Tile -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#glow)"/>
+  <rect x="25" y="25" width="462" height="462" rx="111" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+
+  <!-- Connection arc -->
+  <path d="M188 268 C 216 152, 296 152, 324 268"
+        fill="none" stroke="#DDD6FE" stroke-opacity="0.92"
+        stroke-width="12" stroke-linecap="round" stroke-dasharray="1 25"/>
+
+  <!-- Phone -->
+  <rect x="92" y="214" width="92" height="156" rx="20"
+        fill="#FFFFFF" fill-opacity="0.10" stroke="#F8FAFC" stroke-width="15"/>
+  <path d="M126 232 H150" stroke="#F8FAFC" stroke-width="9" stroke-linecap="round" stroke-opacity="0.85"/>
+  <circle cx="138" cy="350" r="5" fill="#F8FAFC" fill-opacity="0.85"/>
+
+  <!-- Laptop -->
+  <rect x="318" y="214" width="112" height="80" rx="12"
+        fill="#FFFFFF" fill-opacity="0.10" stroke="#F8FAFC" stroke-width="14"/>
+  <path d="M304 308 H444 L466 338 H282 Z"
+        fill="#F8FAFC" fill-opacity="0.16" stroke="#F8FAFC" stroke-width="14"
+        stroke-linejoin="round"/>
+
+  <!-- File in transit -->
+  <g transform="rotate(-13 256 170)">
+    <rect x="224" y="128" width="64" height="82" rx="13" fill="url(#paper)"/>
+    <path d="M239 152 H273 M239 170 H273 M239 188 H261"
+          stroke="#6D28D9" stroke-opacity="0.55" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>
