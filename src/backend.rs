@@ -162,13 +162,23 @@ pub enum BackendErrorKind {
 impl BackendErrorKind {
     pub const fn user_message(self) -> &'static str {
         match self {
-            Self::DeviceUnavailable => "That device is no longer available. Refresh nearby devices and try again.",
+            Self::DeviceUnavailable => {
+                "That device is no longer available. Refresh nearby devices and try again."
+            }
             Self::Network => "The connection was interrupted. Check both devices and try again.",
-            Self::PermissionDenied => "Viloja does not have permission to access the selected file or location.",
-            Self::ServiceUnavailable => "The sharing service is unavailable. Reconnect the backend and try again.",
+            Self::PermissionDenied => {
+                "Viloja does not have permission to access the selected file or location."
+            }
+            Self::ServiceUnavailable => {
+                "The sharing service is unavailable. Reconnect the backend and try again."
+            }
             Self::Unsupported => "This action is not supported by the selected backend.",
-            Self::InvalidRequest => "The request is invalid or no longer applies. Review it and try again.",
-            Self::Unknown => "The operation could not be completed. Try again or inspect diagnostics.",
+            Self::InvalidRequest => {
+                "The request is invalid or no longer applies. Review it and try again."
+            }
+            Self::Unknown => {
+                "The operation could not be completed. Try again or inspect diagnostics."
+            }
         }
     }
 }
@@ -238,7 +248,7 @@ impl BackendRegistry {
 
     pub fn snapshots(&self) -> Vec<BackendSnapshot> {
         let mut snapshots = self.snapshots.values().cloned().collect::<Vec<_>>();
-        snapshots.sort_by(|left, right| left.display_name.to_lowercase().cmp(&right.display_name.to_lowercase()));
+        snapshots.sort_by_key(|snapshot| snapshot.display_name.to_lowercase());
         snapshots
     }
 }
@@ -290,14 +300,7 @@ mod tests {
     use super::*;
 
     fn run_ready<F: Future>(future: F) -> F::Output {
-        struct NoopWake;
-
-        impl Wake for NoopWake {
-            fn wake(self: Arc<Self>) {}
-        }
-
-        let waker = Waker::from(Arc::new(NoopWake));
-        let mut context = Context::from_waker(&waker);
+        let mut context = Context::from_waker(Waker::noop());
         let mut future = Box::pin(future);
 
         match future.as_mut().poll(&mut context) {
@@ -368,12 +371,7 @@ mod tests {
         let raw_detail = "peer=192.0.2.15 token=private-value";
 
         for (kind, expected_message, retryable) in cases {
-            let error = BackendError::new(
-                BackendId("test".into()),
-                kind,
-                raw_detail,
-                retryable,
-            );
+            let error = BackendError::new(BackendId("test".into()), kind, raw_detail, retryable);
 
             assert_eq!(error.user_message(), expected_message);
             assert_eq!(error.is_retryable(), retryable);
@@ -413,8 +411,7 @@ mod tests {
 
     use std::collections::HashMap;
     use std::sync::mpsc::{self, Receiver};
-    use std::sync::Arc;
-    use std::task::{Context, Poll, Wake, Waker};
+    use std::task::{Context, Poll, Waker};
 
     struct ContractFakeBackend {
         state: BackendState,
@@ -462,15 +459,18 @@ mod tests {
                 file_names: vec!["photo.jpg".into()],
                 total_bytes: Some(100),
             };
-            self.transfers.insert(id.clone(), TransferSnapshot {
-                id: id.clone(),
-                backend: self.id(),
-                device: self.device.clone(),
-                direction: TransferDirection::Incoming,
-                state: TransferState::AwaitingApproval,
-                bytes_transferred: 0,
-                total_bytes: Some(100),
-            });
+            self.transfers.insert(
+                id.clone(),
+                TransferSnapshot {
+                    id: id.clone(),
+                    backend: self.id(),
+                    device: self.device.clone(),
+                    direction: TransferDirection::Incoming,
+                    state: TransferState::AwaitingApproval,
+                    bytes_transferred: 0,
+                    total_bytes: Some(100),
+                },
+            );
             self.publish(BackendEvent::IncomingTransfer(incoming));
             id
         }
@@ -558,10 +558,20 @@ mod tests {
         ) -> BackendFuture<'a, Result<(), BackendError>> {
             Box::pin(async move {
                 if !self.snapshot().capabilities.pairing {
-                    return Err(BackendError::new(self.id(), BackendErrorKind::Unsupported, "backend does not support pairing", false));
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::Unsupported,
+                        "backend does not support pairing",
+                        false,
+                    ));
                 }
                 if &self.device.id != device_id {
-                    return Err(BackendError::new(self.id(), BackendErrorKind::DeviceUnavailable, "unknown device", false));
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::DeviceUnavailable,
+                        "unknown device",
+                        false,
+                    ));
                 }
 
                 self.device.paired = true;
@@ -576,7 +586,12 @@ mod tests {
         ) -> BackendFuture<'a, Result<(), BackendError>> {
             Box::pin(async move {
                 if !self.snapshot().capabilities.pairing {
-                    return Err(BackendError::new(self.id(), BackendErrorKind::Unsupported, "backend does not support unpairing", false));
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::Unsupported,
+                        "backend does not support unpairing",
+                        false,
+                    ));
                 }
                 if &self.device.id != device_id {
                     return Err(BackendError::new(
@@ -604,7 +619,12 @@ mod tests {
                         reason: "test service unavailable".into(),
                     };
                     self.publish(BackendEvent::StateChanged(self.state.clone()));
-                    return Err(BackendError::new(self.id(), BackendErrorKind::ServiceUnavailable, "test service unavailable", true));
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::ServiceUnavailable,
+                        "test service unavailable",
+                        true,
+                    ));
                 }
 
                 self.state = BackendState::Running;
@@ -629,11 +649,21 @@ mod tests {
         ) -> BackendFuture<'_, Result<TransferId, BackendError>> {
             Box::pin(async move {
                 if self.state != BackendState::Running {
-                    return Err(BackendError::new(self.id(), BackendErrorKind::ServiceUnavailable, "backend is not running", true));
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::ServiceUnavailable,
+                        "backend is not running",
+                        true,
+                    ));
                 }
 
                 if request.device_id != self.device.id || request.files.is_empty() {
-                    return Err(BackendError::new(self.id(), BackendErrorKind::InvalidRequest, "invalid destination or empty file selection", false));
+                    return Err(BackendError::new(
+                        self.id(),
+                        BackendErrorKind::InvalidRequest,
+                        "invalid destination or empty file selection",
+                        false,
+                    ));
                 }
 
                 let id = TransferId(format!("outgoing-{}", self.next_transfer_id));
@@ -661,15 +691,24 @@ mod tests {
             Box::pin(async move {
                 let backend_id = self.id();
                 let updated = {
-                    let transfer = self
-                        .transfers
-                        .get_mut(transfer_id)
-                        .ok_or_else(|| BackendError::new(backend_id.clone(), BackendErrorKind::InvalidRequest, "unknown transfer", false))?;
+                    let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| {
+                        BackendError::new(
+                            backend_id.clone(),
+                            BackendErrorKind::InvalidRequest,
+                            "unknown transfer",
+                            false,
+                        )
+                    })?;
 
                     if transfer.direction != TransferDirection::Incoming
                         || transfer.state != TransferState::AwaitingApproval
                     {
-                        return Err(BackendError::new(backend_id, BackendErrorKind::InvalidRequest, "incoming transfer is not awaiting approval", false));
+                        return Err(BackendError::new(
+                            backend_id,
+                            BackendErrorKind::InvalidRequest,
+                            "incoming transfer is not awaiting approval",
+                            false,
+                        ));
                     }
 
                     transfer.state = match decision {
@@ -692,29 +731,38 @@ mod tests {
                 let backend_id = self.id();
                 let capabilities = self.snapshot().capabilities;
                 let updated = {
-                    let transfer = self
-                        .transfers
-                        .get_mut(transfer_id)
-                        .ok_or_else(|| BackendError::new(
+                    let transfer = self.transfers.get_mut(transfer_id).ok_or_else(|| {
+                        BackendError::new(
                             backend_id.clone(),
                             BackendErrorKind::InvalidRequest,
                             "unknown transfer",
                             false,
-                        ))?;
+                        )
+                    })?;
 
                     let supported = match transfer.direction {
                         TransferDirection::Incoming => capabilities.cancel_incoming,
                         TransferDirection::Outgoing => capabilities.cancel_outgoing,
                     };
                     if !supported {
-                        return Err(BackendError::new(backend_id, BackendErrorKind::Unsupported, "backend does not support cancelling this transfer direction", false));
+                        return Err(BackendError::new(
+                            backend_id,
+                            BackendErrorKind::Unsupported,
+                            "backend does not support cancelling this transfer direction",
+                            false,
+                        ));
                     }
 
                     if !matches!(
                         transfer.state,
                         TransferState::Queued | TransferState::InProgress
                     ) {
-                        return Err(BackendError::new(backend_id, BackendErrorKind::InvalidRequest, "transfer is not cancellable", false));
+                        return Err(BackendError::new(
+                            backend_id,
+                            BackendErrorKind::InvalidRequest,
+                            "transfer is not cancellable",
+                            false,
+                        ));
                     }
 
                     transfer.state = TransferState::Cancelled;
@@ -726,7 +774,6 @@ mod tests {
             })
         }
     }
-
 
     fn receive_transfer(receiver: &Receiver<BackendEvent>) -> TransferSnapshot {
         match receiver.recv().expect("expected transfer event") {
@@ -769,13 +816,17 @@ mod tests {
         let _ = receiver.recv();
         let device_id = backend.device.id.clone();
 
-        backend.pair_device_now(&device_id).expect("pairing should succeed");
+        backend
+            .pair_device_now(&device_id)
+            .expect("pairing should succeed");
         match receiver.recv().unwrap() {
             BackendEvent::DeviceUpdated(device) => assert!(device.paired),
             other => panic!("expected paired device update, received {other:?}"),
         }
 
-        backend.unpair_device_now(&device_id).expect("unpairing should succeed");
+        backend
+            .unpair_device_now(&device_id)
+            .expect("unpairing should succeed");
         match receiver.recv().unwrap() {
             BackendEvent::DeviceUpdated(device) => assert!(!device.paired),
             other => panic!("expected unpaired device update, received {other:?}"),
@@ -794,28 +845,46 @@ mod tests {
         let mut backend: Box<dyn SharingBackend> = Box::new(ContractFakeBackend::new());
         let (sender, receiver) = mpsc::channel();
         run_ready(backend.start(sender)).expect("backend should start");
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::StateChanged(BackendState::Running)));
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::DeviceDiscovered(_)));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Running)
+        ));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::DeviceDiscovered(_)
+        ));
         let id = run_ready(backend.send_files(SendRequest {
             device_id: DeviceId("device-1".into()),
             files: vec![PathBuf::from("/tmp/object-safe.txt")],
-        })).expect("trait-object send should succeed");
+        }))
+        .expect("trait-object send should succeed");
         assert_eq!(receive_transfer(&receiver).id, id);
         run_ready(backend.stop()).expect("backend should stop");
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::StateChanged(BackendState::Stopped)));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Stopped)
+        ));
     }
 
     #[test]
     fn backend_contract_covers_discovery_outgoing_progress_and_completion() {
         let mut backend = ContractFakeBackend::new();
         let receiver = backend.start_with_receiver();
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::StateChanged(BackendState::Running)));
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::DeviceDiscovered(_)));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Running)
+        ));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::DeviceDiscovered(_)
+        ));
 
-        let id = backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: vec![PathBuf::from("/tmp/example.txt")],
-        }).unwrap();
+        let id = backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: vec![PathBuf::from("/tmp/example.txt")],
+            })
+            .unwrap();
         let queued = receive_transfer(&receiver);
         assert_eq!(queued.id, id);
         assert_eq!(queued.state, TransferState::Queued);
@@ -838,14 +907,18 @@ mod tests {
         let _ = receiver.recv();
         let _ = receiver.recv();
 
-        assert!(backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: Vec::new(),
-        }).is_err());
-        assert!(backend.send_files_now(SendRequest {
-            device_id: DeviceId("unknown-device".into()),
-            files: vec![PathBuf::from("/tmp/example.txt")],
-        }).is_err());
+        assert!(backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: Vec::new(),
+            })
+            .is_err());
+        assert!(backend
+            .send_files_now(SendRequest {
+                device_id: DeviceId("unknown-device".into()),
+                files: vec![PathBuf::from("/tmp/example.txt")],
+            })
+            .is_err());
 
         assert!(backend.transfers.is_empty());
         assert!(matches!(
@@ -862,21 +935,34 @@ mod tests {
         let _ = receiver.recv();
 
         let unknown_id = TransferId("missing-transfer".into());
-        assert!(backend.decide_incoming_now(&unknown_id, IncomingDecision::Accept).is_err());
+        assert!(backend
+            .decide_incoming_now(&unknown_id, IncomingDecision::Accept)
+            .is_err());
 
-        let outgoing_id = backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: vec![PathBuf::from("/tmp/example.txt")],
-        }).unwrap();
+        let outgoing_id = backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: vec![PathBuf::from("/tmp/example.txt")],
+            })
+            .unwrap();
         let _ = receive_transfer(&receiver);
-        assert!(backend.decide_incoming_now(&outgoing_id, IncomingDecision::Accept).is_err());
+        assert!(backend
+            .decide_incoming_now(&outgoing_id, IncomingDecision::Accept)
+            .is_err());
 
         let incoming_id = backend.request_incoming();
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
-        backend.decide_incoming_now(&incoming_id, IncomingDecision::Accept).unwrap();
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::IncomingTransfer(_)
+        ));
+        backend
+            .decide_incoming_now(&incoming_id, IncomingDecision::Accept)
+            .unwrap();
         assert_eq!(receive_transfer(&receiver).state, TransferState::InProgress);
 
-        assert!(backend.decide_incoming_now(&incoming_id, IncomingDecision::Reject).is_err());
+        assert!(backend
+            .decide_incoming_now(&incoming_id, IncomingDecision::Reject)
+            .is_err());
         assert_eq!(
             backend.transfers.get(&incoming_id).unwrap().state,
             TransferState::InProgress
@@ -895,13 +981,23 @@ mod tests {
         let _ = receiver.recv();
 
         let accepted_id = backend.request_incoming();
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
-        backend.decide_incoming_now(&accepted_id, IncomingDecision::Accept).unwrap();
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::IncomingTransfer(_)
+        ));
+        backend
+            .decide_incoming_now(&accepted_id, IncomingDecision::Accept)
+            .unwrap();
         assert_eq!(receive_transfer(&receiver).state, TransferState::InProgress);
 
         let rejected_id = backend.request_incoming();
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
-        backend.decide_incoming_now(&rejected_id, IncomingDecision::Reject).unwrap();
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::IncomingTransfer(_)
+        ));
+        backend
+            .decide_incoming_now(&rejected_id, IncomingDecision::Reject)
+            .unwrap();
         assert_eq!(receive_transfer(&receiver).state, TransferState::Rejected);
     }
 
@@ -913,8 +1009,13 @@ mod tests {
         let _ = receiver.recv();
 
         let incoming_id = backend.request_incoming();
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::IncomingTransfer(_)));
-        backend.decide_incoming_now(&incoming_id, IncomingDecision::Accept).unwrap();
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::IncomingTransfer(_)
+        ));
+        backend
+            .decide_incoming_now(&incoming_id, IncomingDecision::Accept)
+            .unwrap();
         assert!(matches!(
             receive_transfer(&receiver).state,
             TransferState::InProgress
@@ -945,10 +1046,12 @@ mod tests {
             Err(mpsc::TryRecvError::Empty)
         ));
 
-        let completed_id = backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: vec![PathBuf::from("/tmp/completed.txt")],
-        }).unwrap();
+        let completed_id = backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: vec![PathBuf::from("/tmp/completed.txt")],
+            })
+            .unwrap();
         let _ = receive_transfer(&receiver);
         backend.complete_transfer(&completed_id);
         assert_eq!(receive_transfer(&receiver).state, TransferState::Completed);
@@ -971,20 +1074,28 @@ mod tests {
         let _ = receiver.recv();
         let _ = receiver.recv();
 
-        let id = backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: vec![PathBuf::from("/tmp/example.txt")],
-        }).unwrap();
+        let id = backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: vec![PathBuf::from("/tmp/example.txt")],
+            })
+            .unwrap();
         let _ = receive_transfer(&receiver);
         backend.cancel_transfer_now(&id).unwrap();
         assert_eq!(receive_transfer(&receiver).state, TransferState::Cancelled);
 
         backend.disconnect_device();
-        assert!(matches!(receiver.recv().unwrap(), BackendEvent::DeviceLost(_)));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            BackendEvent::DeviceLost(_)
+        ));
         backend.stop_now().unwrap();
 
         let restarted = backend.start_with_receiver();
-        assert!(matches!(restarted.recv().unwrap(), BackendEvent::StateChanged(BackendState::Running)));
+        assert!(matches!(
+            restarted.recv().unwrap(),
+            BackendEvent::StateChanged(BackendState::Running)
+        ));
         match restarted.recv().unwrap() {
             BackendEvent::DeviceDiscovered(device) => {
                 // Restarting the backend does not prove the remote device reconnected.
@@ -1005,10 +1116,12 @@ mod tests {
             receiver.recv().unwrap(),
             BackendEvent::StateChanged(BackendState::Unavailable { .. })
         ));
-        assert!(backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: vec![PathBuf::from("/tmp/example.txt")],
-        }).is_err());
+        assert!(backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: vec![PathBuf::from("/tmp/example.txt")],
+            })
+            .is_err());
         assert!(backend.transfers.is_empty());
         assert!(matches!(
             receiver.try_recv(),
@@ -1025,10 +1138,12 @@ mod tests {
             BackendEvent::StateChanged(BackendState::Stopped)
         ));
 
-        assert!(backend.send_files_now(SendRequest {
-            device_id: backend.device.id.clone(),
-            files: vec![PathBuf::from("/tmp/example.txt")],
-        }).is_err());
+        assert!(backend
+            .send_files_now(SendRequest {
+                device_id: backend.device.id.clone(),
+                files: vec![PathBuf::from("/tmp/example.txt")],
+            })
+            .is_err());
         assert!(backend.transfers.is_empty());
         assert!(matches!(
             events.try_recv(),
@@ -1053,7 +1168,10 @@ mod tests {
             recovered.recv().unwrap(),
             BackendEvent::StateChanged(BackendState::Running)
         ));
-        assert!(matches!(recovered.recv().unwrap(), BackendEvent::DeviceDiscovered(_)));
+        assert!(matches!(
+            recovered.recv().unwrap(),
+            BackendEvent::DeviceDiscovered(_)
+        ));
     }
 
     #[test]
@@ -1110,9 +1228,6 @@ mod tests {
             registry.snapshots()[0].state,
             BackendState::Unavailable { .. }
         ));
-        assert!(!registry.update_state(
-            &BackendId("missing".into()),
-            BackendState::Running
-        ));
+        assert!(!registry.update_state(&BackendId("missing".into()), BackendState::Running));
     }
 }

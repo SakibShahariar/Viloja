@@ -3,12 +3,19 @@ mod diagnostics;
 mod valent;
 
 use adw::prelude::*;
+use diagnostics::{DiagnosticEvent, DiagnosticLevel};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::mpsc::{self, TryRecvError};
 use std::time::Duration;
-use diagnostics::{DiagnosticEvent, DiagnosticLevel};
+
+/// Shared slot for the active backend adapter.
+///
+/// Lifecycle operations take the adapter out of this slot before awaiting, so a
+/// `RefCell` borrow is never held across an `.await` point and a refresh cannot
+/// panic while a previous discovery is still pending.
+type BackendSlot = Rc<RefCell<Option<Box<dyn backend::SharingBackend>>>>;
 
 fn prune_selected_device(
     selected_device: &Rc<RefCell<Option<String>>>,
@@ -57,7 +64,7 @@ fn render_device_list(
 ) {
     clear_device_list(device_list);
     let mut devices = known_devices.values().cloned().collect::<Vec<_>>();
-    devices.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    devices.sort_by_key(|device| device.name.to_lowercase());
 
     match prune_selected_device(selected_device, &devices) {
         Some(name) => selection_status.set_text(&format!("Selected destination: {name}")),
@@ -94,18 +101,27 @@ fn render_device_list(
 }
 
 fn start_backend(
-    backend: Rc<RefCell<Box<dyn backend::SharingBackend>>>,
+    backend: BackendSlot,
     events: std::sync::mpsc::Sender<backend::BackendEvent>,
     refresh_button: gtk::Button,
 ) {
-    diagnostics::record(DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
+    diagnostics::record(
+        DiagnosticLevel::Info,
+        DiagnosticEvent::BackendRefreshStarted,
+    );
     glib::MainContext::default().spawn_local(async move {
-        let mut backend = backend.borrow_mut();
-        let result = backend.start(events).await;
-        drop(backend);
+        let Some(mut adapter) = backend.borrow_mut().take() else {
+            refresh_button.set_sensitive(true);
+            return;
+        };
+        let result = adapter.start(events).await;
+        *backend.borrow_mut() = Some(adapter);
         refresh_button.set_sensitive(true);
         if result.is_err() {
-            diagnostics::record(DiagnosticLevel::Error, DiagnosticEvent::BackendDiscoveryFailed);
+            diagnostics::record(
+                DiagnosticLevel::Error,
+                DiagnosticEvent::BackendDiscoveryFailed,
+            );
         }
     });
 }
@@ -170,8 +186,16 @@ fn backend_capabilities_text(snapshot: &backend::BackendSnapshot) -> String {
     } else {
         "unavailable in Viloja (managed externally by Valent)"
     };
-    let sending = if capabilities.send_files { "available" } else { "unavailable" };
-    let receiving = if capabilities.receive_files { "available" } else { "unavailable" };
+    let sending = if capabilities.send_files {
+        "available"
+    } else {
+        "unavailable"
+    };
+    let receiving = if capabilities.receive_files {
+        "available"
+    } else {
+        "unavailable"
+    };
     let cancellation = if capabilities.cancel_outgoing || capabilities.cancel_incoming {
         "available for supported transfer directions"
     } else {
@@ -196,10 +220,7 @@ fn backend_capabilities_card(snapshot: &backend::BackendSnapshot) -> gtk::Box {
     )
 }
 
-fn render_backend_capabilities(
-    container: &gtk::Box,
-    registry: &backend::BackendRegistry,
-) {
+fn render_backend_capabilities(container: &gtk::Box, registry: &backend::BackendRegistry) {
     clear_device_list(container);
     for snapshot in registry.snapshots() {
         container.append(&backend_capabilities_card(&snapshot));
@@ -221,9 +242,12 @@ fn build_ui(app: &adw::Application) {
         .default_height(700)
         .build();
 
-    let backend: Rc<RefCell<Box<dyn backend::SharingBackend>>> =
-        Rc::new(RefCell::new(valent::create_backend()));
-    let backend_snapshot = backend.borrow().snapshot();
+    let backend: BackendSlot = Rc::new(RefCell::new(Some(valent::create_backend())));
+    let backend_snapshot = backend
+        .borrow()
+        .as_ref()
+        .expect("the backend is initialized before the UI is built")
+        .snapshot();
     let mut initial_registry = backend::BackendRegistry::default();
     initial_registry.register(backend_snapshot);
     let backend_registry = Rc::new(RefCell::new(initial_registry));
@@ -308,8 +332,7 @@ fn build_ui(app: &adw::Application) {
             };
 
             match event {
-                backend::BackendEvent::StateChanged(state) => {
-                    match state {
+                backend::BackendEvent::StateChanged(state) => match state {
                     backend::BackendState::Starting => {
                         status_for_events.set_text("Connecting to the sharing backend…");
                     }
@@ -350,7 +373,6 @@ fn build_ui(app: &adw::Application) {
                     backend::BackendState::Stopping => {
                         status_for_events.set_text("Stopping device discovery…");
                     }
-                    }
                 },
                 backend::BackendEvent::DeviceDiscovered(device) => {
                     devices_for_events
@@ -370,7 +392,9 @@ fn build_ui(app: &adw::Application) {
                     ));
                     diagnostics::record(
                         DiagnosticLevel::Info,
-                        DiagnosticEvent::DiscoveryCompleted { device_count: count },
+                        DiagnosticEvent::DiscoveryCompleted {
+                            device_count: count,
+                        },
                     );
                 }
                 backend::BackendEvent::DeviceUpdated(device) => {
@@ -396,8 +420,14 @@ fn build_ui(app: &adw::Application) {
                 }
                 backend::BackendEvent::BackendSnapshotChanged(snapshot) => {
                     registry_for_events.borrow_mut().register(snapshot);
-                    render_backend_capabilities(&nearby_cards_for_events, &registry_for_events.borrow());
-                    render_backend_capabilities(&settings_cards_for_events, &registry_for_events.borrow());
+                    render_backend_capabilities(
+                        &nearby_cards_for_events,
+                        &registry_for_events.borrow(),
+                    );
+                    render_backend_capabilities(
+                        &settings_cards_for_events,
+                        &registry_for_events.borrow(),
+                    );
                 }
                 backend::BackendEvent::IncomingTransfer(_)
                 | backend::BackendEvent::TransferUpdated(_) => {}
@@ -408,12 +438,11 @@ fn build_ui(app: &adw::Application) {
 
     let backend_for_close = backend.clone();
     window.connect_close_request(move |_| {
-        let backend = backend_for_close.clone();
-        glib::MainContext::default().spawn_local(async move {
-            if let Ok(mut backend) = backend.try_borrow_mut() {
-                let _ = backend.stop().await;
-            }
-        });
+        if let Some(mut adapter) = backend_for_close.borrow_mut().take() {
+            glib::MainContext::default().spawn_local(async move {
+                let _ = adapter.stop().await;
+            });
+        }
         glib::Propagation::Proceed
     });
 
@@ -448,7 +477,11 @@ fn build_ui(app: &adw::Application) {
         "No transfers yet",
         "Transfer progress, cancellation, completion, and error states will appear once transfer events are integrated.",
     ));
-    stack.add_titled(&make_scrolled_page(&transfers), Some("transfers"), "Transfers");
+    stack.add_titled(
+        &make_scrolled_page(&transfers),
+        Some("transfers"),
+        "Transfers",
+    );
 
     let history = make_page(
         "History",
@@ -486,12 +519,7 @@ fn build_ui(app: &adw::Application) {
         "Diagnostic entries use fixed event names and numeric counts only. Device names, addresses, tokens, paths, and raw backend error strings are never added to this log.",
         "dim-label",
     ));
-    let verbosity = gtk::DropDown::from_strings(&[
-        "Errors only",
-        "Normal",
-        "Verbose",
-        "Off",
-    ]);
+    let verbosity = gtk::DropDown::from_strings(&["Errors only", "Normal", "Verbose", "Off"]);
     verbosity.set_selected(diagnostics::verbosity_index());
     verbosity.connect_selected_notify(|dropdown| {
         diagnostics::set_verbosity(dropdown.selected());
@@ -592,11 +620,10 @@ fn main() {
     app.run();
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::valent::{parse_valent_devices, ValentDeviceInfo};
+    use crate::valent::parse_valent_devices;
 
     fn backend_device(name: &str) -> backend::Device {
         backend::Device {
@@ -631,7 +658,10 @@ mod tests {
         );
         assert_eq!(selected.borrow().as_deref(), Some("device-Phone"));
 
-        assert_eq!(prune_selected_device(&selected, &[backend_device("Laptop")]), None);
+        assert_eq!(
+            prune_selected_device(&selected, &[backend_device("Laptop")]),
+            None
+        );
         assert_eq!(selected.borrow().as_deref(), None);
     }
 

@@ -105,9 +105,7 @@ pub fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
                     .child_value(0)
                     .get::<String>()
                     .unwrap_or_default();
-                let boxed_value = property_entry
-                    .child_value(1)
-                    .get::<glib::Variant>();
+                let boxed_value = property_entry.child_value(1).get::<glib::Variant>();
 
                 let Some(value) = boxed_value else {
                     continue;
@@ -152,7 +150,7 @@ pub fn parse_valent_devices(reply: &glib::Variant) -> Vec<ValentDeviceInfo> {
         }
     }
 
-    devices.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    devices.sort_by_key(|device| device.name.to_lowercase());
     devices
 }
 
@@ -185,7 +183,6 @@ pub fn query_devices(
         },
     );
 }
-
 
 pub(crate) type DeviceSignalSubscriptions =
     Rc<RefCell<Option<(gio::DBusConnection, Vec<gio::SignalSubscriptionId>)>>>;
@@ -244,7 +241,10 @@ pub(crate) fn subscribe_device_changes(
         move |_, _, _, _, _, _| refresh(),
     );
 
-    *subscriptions.borrow_mut() = Some((connection.clone(), vec![properties_id, added_id, removed_id]));
+    *subscriptions.borrow_mut() = Some((
+        connection.clone(),
+        vec![properties_id, added_id, removed_id],
+    ));
 }
 
 pub(crate) struct NameWatcher(Box<dyn FnOnce()>);
@@ -267,7 +267,6 @@ pub(crate) fn watch_name(
 pub(crate) fn unwatch_name(watcher_id: NameWatcher) {
     (watcher_id.0)();
 }
-
 
 #[cfg(test)]
 mod backend_contract_tests {
@@ -341,7 +340,6 @@ mod backend_contract_tests {
     }
 }
 
-
 fn publish_device_list(
     devices: Vec<ValentDeviceInfo>,
     events: &Sender<BackendEvent>,
@@ -353,10 +351,7 @@ fn publish_device_list(
         .collect::<HashSet<_>>();
     let mut known = known_devices.borrow_mut();
 
-    let removed = known
-        .difference(&current_ids)
-        .cloned()
-        .collect::<Vec<_>>();
+    let removed = known.difference(&current_ids).cloned().collect::<Vec<_>>();
     for id in removed {
         known.remove(&id);
         let _ = events.send(BackendEvent::DeviceLost(id));
@@ -452,7 +447,7 @@ async fn query_devices_future(
             OBJECT_MANAGER_INTERFACE,
             "GetManagedObjects",
             None,
-            Some(&reply_type),
+            Some(reply_type),
             gio::DBusCallFlags::NONE,
             3000,
         )
@@ -559,10 +554,7 @@ impl SharingBackend for ValentBackend {
                 },
                 move || {
                     clear_device_signal_subscriptions(&subscriptions_vanished);
-                    let removed = known_vanished
-                        .borrow_mut()
-                        .drain()
-                        .collect::<Vec<_>>();
+                    let removed = known_vanished.borrow_mut().drain().collect::<Vec<_>>();
                     for id in removed {
                         let _ = events_vanished.send(BackendEvent::DeviceLost(id));
                     }
@@ -680,7 +672,9 @@ mod valent_backend_tests {
 
         assert_eq!(error.kind, BackendErrorKind::Unsupported);
         assert!(!error.is_retryable());
-        assert!(!error.to_string().contains("not implemented by the Valent adapter"));
+        assert!(!error
+            .to_string()
+            .contains("not implemented by the Valent adapter"));
         assert!(error.user_message().contains("not supported"));
     }
 

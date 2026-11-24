@@ -34,9 +34,9 @@ impl DiagnosticEvent {
             Self::BackendRefreshStarted => "\"event\":\"backend.refresh_started\"".into(),
             Self::SessionBusUnavailable => "\"event\":\"session_bus.unavailable\"".into(),
             Self::BackendUnavailable => "\"event\":\"backend.unavailable\"".into(),
-            Self::DiscoveryCompleted { device_count } => format!(
-                "\"event\":\"backend.discovery_completed\",\"device_count\":{device_count}"
-            ),
+            Self::DiscoveryCompleted { device_count } => {
+                format!("\"event\":\"backend.discovery_completed\",\"device_count\":{device_count}")
+            }
             Self::BackendDiscoveryFailed => "\"event\":\"backend.discovery_failed\"".into(),
             Self::RefreshSuperseded => "\"event\":\"backend.refresh_superseded\"".into(),
         }
@@ -44,7 +44,9 @@ impl DiagnosticEvent {
 
     fn level(self) -> DiagnosticLevel {
         match self {
-            Self::SessionBusUnavailable | Self::BackendUnavailable | Self::BackendDiscoveryFailed => DiagnosticLevel::Error,
+            Self::SessionBusUnavailable
+            | Self::BackendUnavailable
+            | Self::BackendDiscoveryFailed => DiagnosticLevel::Error,
             Self::BackendRefreshStarted | Self::DiscoveryCompleted { .. } => DiagnosticLevel::Info,
             Self::RefreshSuperseded => DiagnosticLevel::Debug,
         }
@@ -157,17 +159,29 @@ mod tests {
 
     #[test]
     fn log_export_is_json_lines() {
-        let first = format_entry(1, DiagnosticLevel::Info, DiagnosticEvent::BackendRefreshStarted);
-        let second = format_entry(2, DiagnosticLevel::Error, DiagnosticEvent::BackendUnavailable);
+        let first = format_entry(
+            1,
+            DiagnosticLevel::Info,
+            DiagnosticEvent::BackendRefreshStarted,
+        );
+        let second = format_entry(
+            2,
+            DiagnosticLevel::Error,
+            DiagnosticEvent::BackendUnavailable,
+        );
         let exported = [first, second].join("\n");
         assert_eq!(exported.lines().count(), 2);
-        assert!(exported.lines().all(|line| line.starts_with("{\"timestamp_unix\"")));
+        assert!(exported
+            .lines()
+            .all(|line| line.starts_with("{\"timestamp_unix\"")));
         assert!(exported.lines().all(|line| line.ends_with('}')));
     }
 
     #[test]
     fn bounded_log_discards_the_oldest_entry() {
-        let mut log = (0..MAX_ENTRIES).map(|n| n.to_string()).collect::<VecDeque<_>>();
+        let mut log = (0..MAX_ENTRIES)
+            .map(|n| n.to_string())
+            .collect::<VecDeque<_>>();
         append_entry(&mut log, "newest".into());
         assert_eq!(log.len(), MAX_ENTRIES);
         assert_eq!(log.front().map(String::as_str), Some("1"));

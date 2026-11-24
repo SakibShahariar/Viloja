@@ -231,3 +231,36 @@ Both red runs were caused by the refresh closure taking ownership of the same co
 
 - Checkpoint: `5c1360941402e769ae99ae7a9010aed43cca49ad`
 - Unresolved red or pending entries in this reviewed range: none.
+
+
+### Incremental audit: 2026-11-24 (pairing state and generic backend snapshots)
+
+Reviewed all 15 commits after checkpoint `5c1360941402e769ae99ae7a9010aed43cca49ad` through `70bcb1e651b3102c931bcf72240f4d4e54a475a1`. Push-triggered Rust CI runs were queried by exact head SHA; results below are the observed completed conclusions. Test counts come from the `Run Rust tests` step in each run's log.
+
+| Commit SHA | Subject | CI result | Workflow run | Notes |
+|---|---|---|---|---|
+| `115619a26a636663a0dc1cd969d8a4de2847b3f5` | refactor(ui): consume backend events through shared contract (#7) | green | [41877100050](https://github.com/SakibShahariar/Viloja/actions/runs/41877100050) | Cargo check, cargo-deny, and 38/38 tests passed. |
+| `75fd7157f4535671248b691998f48e3431fe5770` | feat(backend): preserve device pairing request states (#7) | red | [41877461738](https://github.com/SakibShahariar/Viloja/actions/runs/41877461738) | Cargo check failed: `backend::Device` had no `pairing_state` field (E0560/E0609). Fixed by `d383872`. |
+| `d383872635b75bdc8929dbbb7067428b45c02da9` | fix(backend): add pairing state to device contract (#7) | green | [41877492469](https://github.com/SakibShahariar/Viloja/actions/runs/41877492469) | Cargo check, cargo-deny, and 39/39 tests passed. |
+| `4470b73b6e8d6f975204daa7fd74bc71b6f632a9` | test(ui): cover shared pairing state labels (#7) | green | [41880022450](https://github.com/SakibShahariar/Viloja/actions/runs/41880022450) | Cargo check, cargo-deny, and 40/40 tests passed. |
+| `ab6dc151c2e43a69b4a77e0930a88e8e67c42036` | feat(backend): add generic backend snapshot registry (#8) | green | [41880189058](https://github.com/SakibShahariar/Viloja/actions/runs/41880189058) | Cargo check, cargo-deny, and 40/40 tests passed. |
+| `d696083705c16ddca864a10be8dafa613663be7e` | refactor(ui): render registered backend snapshots generically (#8) | green | [41880225703](https://github.com/SakibShahariar/Viloja/actions/runs/41880225703) | Cargo check, cargo-deny, and 40/40 tests passed. |
+| `7a048b99665e08ae0447d9abbaef12c001fc566e` | test(backend): cover generic snapshot registry (#8) | green | [41880259153](https://github.com/SakibShahariar/Viloja/actions/runs/41880259153) | Cargo check, cargo-deny, and 42/42 tests passed. |
+| `1c4fbc723b69b2684d0be50a96c93126583f1567` | feat(ui): refresh registered backend availability (#8) | red | [41880312657](https://github.com/SakibShahariar/Viloja/actions/runs/41880312657) | Cargo check failed: `settings_backend_cards` used before declaration (E0425). Fixed by `4be330b`. |
+| `dbb7a733c5a1f44c1a7b585f59c950d3619c0737` | fix(ui): borrow backend availability state (#8) | red | [41880336420](https://github.com/SakibShahariar/Viloja/actions/runs/41880336420) | Same E0425 remained; `settings_backend_cards` still out of scope. |
+| `d145bc89b61ee28736aaa905e6f55e3895d35e03` | feat(backend): publish snapshot change events (#8) | red | [41880584979](https://github.com/SakibShahariar/Viloja/actions/runs/41880584979) | Same E0425 remained in the settings-card event handler. |
+| `035797a6693e45b897abf71d67e5c5a778e4304f` | feat(valent): publish backend availability snapshots (#8) | red | [41880617736](https://github.com/SakibShahariar/Viloja/actions/runs/41880617736) | Same E0425 remained. |
+| `314521420c7bacbd6a4b50fba90d4049e8156e12` | refactor(ui): consume generic backend snapshot events (#8) | red | [41880773207](https://github.com/SakibShahariar/Viloja/actions/runs/41880773207) | Same E0425 remained. |
+| `4be330b4be6c73e7110a0ba47dcc79860c3c49a6` | fix(ui): initialize settings backend cards before event polling (#8) | green | [41880943253](https://github.com/SakibShahariar/Viloja/actions/runs/41880943253) | Cargo check, cargo-deny, and 42/42 tests passed. |
+| `6d24ab6cf5349b1e4416f13adffe5f303dff40ca` | test(valent): verify backend snapshot change events (#8) | green | [41881274516](https://github.com/SakibShahariar/Viloja/actions/runs/41881274516) | Cargo check, cargo-deny, and 43/43 tests passed. |
+| `70bcb1e651b3102c931bcf72240f4d4e54a475a1` | docs: define staged universal sharing roadmap and neutral adapter naming | green | [42198517975](https://github.com/SakibShahariar/Viloja/actions/runs/42198517975) | Cargo check, cargo-deny, and 43/43 tests passed. |
+
+#### Resolved CI regressions
+
+Two distinct root causes were observed in this range, and both were corrected on the following green commit:
+
+- `75fd715` introduced device pairing request states in the shared contract before `backend::Device` actually had a `pairing_state` field; `d383872` added the field and restored green.
+- `1c4fbc7` introduced an event handler that referenced `settings_backend_cards` before that box was declared. Four follow-up commits (`dbb7a73`, `d145bc8`, `035797a`, `3145214`) carried the same E0425 until `4be330b` moved the settings-card initialization ahead of event polling and restored green. All five red runs were inspected from their failed job logs.
+
+- Checkpoint: `70bcb1e651b3102c931bcf72240f4d4e54a475a1`
+- Unresolved red or pending entries in this reviewed range: none.
